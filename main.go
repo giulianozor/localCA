@@ -78,8 +78,9 @@ func main() {
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
 	mux.HandleFunc("/download", a.handleDownload)
 
-	addr := fmt.Sprintf("0.0.0.0:%d", port)
+	addr := fmt.Sprintf(":%d", port)
 	log.Printf("localCA UI available on all interfaces (port %d), access via http://<host-ip-or-hostname>:%d", port, port)
+	log.Printf("WARNING: server is reachable from network interfaces; use only in trusted networks or restrict access with firewall rules")
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
