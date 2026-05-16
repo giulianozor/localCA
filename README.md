@@ -14,7 +14,7 @@ go run . -port 9090 /percorso/dati
 
 L'unico parametro da riga di comando è il percorso dove salvare dati e configurazione.
 È disponibile un flag opzionale `-port` (default `8080`) per impostare la porta web.
-L'applicazione espone la UI su `http://localhost:<porta>`.
+L'applicazione ascolta su tutte le interfacce (`0.0.0.0`) ed espone la UI su `http://<ip-host>:<porta>`.
 
 ## Funzionalità
 

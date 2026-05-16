@@ -78,8 +78,8 @@ func main() {
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
 	mux.HandleFunc("/download", a.handleDownload)
 
-	addr := fmt.Sprintf(":%d", port)
-	log.Printf("localCA UI available at http://localhost%s", addr)
+	addr := fmt.Sprintf("0.0.0.0:%d", port)
+	log.Printf("localCA UI available on all interfaces at http://%s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
