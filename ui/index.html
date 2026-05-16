@@ -50,7 +50,7 @@
         <form method="post" action="/certs/create">
           <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="dev.local"></label>
           <label>{{index .T "cert.create.sans_label"}}
-            <input name="sans" placeholder="dev.local, api.locsl, 127.0.0.1">
+            <input name="sans" placeholder="dev.local, api.local, 127.0.0.1">
           </label>
           <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
             <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
