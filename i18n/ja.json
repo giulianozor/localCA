@@ -1,5 +1,5 @@
 {
-  "subtitle": "ローカル CA とサーバー証明書（FQDN、IP、.local/.locsl）を管理します。",
+  "subtitle": "ローカル CA とサーバー証明書（FQDN、IP、.local）を管理します。",
   "language.title": "言語",
   "language.label": "言語を選択",
   "language.en": "英語",
@@ -23,7 +23,7 @@
   "export.label": "エクスポート",
   "cert.create.title": "サーバー証明書を作成",
   "cert.create.cn_label": "Common Name（任意: デフォルトは最初の SAN）",
-  "cert.create.sans_label": "SAN（必須、カンマ区切り: FQDN、IP、.local/.locsl）",
+  "cert.create.sans_label": "SAN（必須、カンマ区切り: FQDN、IP、.local）",
   "cert.create.validity_label": "有効期間（年）(1-%d、デフォルト %d)",
   "cert.create.button": "証明書を作成",
   "cert.list.title": "発行済み証明書",

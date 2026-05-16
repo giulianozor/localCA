@@ -2,7 +2,7 @@
   const certFilterForm = document.querySelector(".js-cert-filter-form");
   const certFilterInput = document.querySelector(".js-cert-filter-input");
   if (certFilterForm && certFilterInput) {
-    let filterTimeout;
+    let filterTimeout = null;
     certFilterInput.addEventListener("input", () => {
       window.clearTimeout(filterTimeout);
       filterTimeout = window.setTimeout(() => {
