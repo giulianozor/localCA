@@ -661,6 +661,7 @@ const indexHTML = `<!doctype html>
     :root { color-scheme: dark; }
     body { background: #111827; color: #e5e7eb; font-family: Inter, system-ui, sans-serif; margin: 0; }
     .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .topbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
     .card { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 18px; margin-bottom: 16px; }
     h1,h2 { margin-top: 0; }
     label { display: block; margin-top: 10px; font-size: 0.95rem; }
@@ -672,26 +673,24 @@ const indexHTML = `<!doctype html>
     .msg { background: #064e3b; border: 1px solid #10b981; color: #d1fae5; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
     .err { background: #7f1d1d; border: 1px solid #f87171; color: #fee2e2; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
     .muted { color: #9ca3af; font-size: 0.9rem; }
-    .lang-form { max-width: 280px; margin-bottom: 16px; }
+    .lang-form { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+    .lang-form label { margin-top: 0; white-space: nowrap; }
+    .lang-form select { width: auto; min-width: 110px; margin-top: 0; padding: 6px 8px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>localCA</h1>
-    <p class="muted">{{index .T "subtitle"}}</p>
-
-    <div class="card lang-form">
-      <h2>{{index .T "language.title"}}</h2>
-      <form method="post" action="/lang">
-        <label>{{index .T "language.label"}}
-          <select name="lang">
-            <option value="en" {{if eq .Lang "en"}}selected{{end}}>{{index .T "language.en"}}</option>
-            <option value="it" {{if eq .Lang "it"}}selected{{end}}>{{index .T "language.it"}}</option>
-          </select>
-        </label>
-        <button type="submit">{{index .T "language.button"}}</button>
+    <div class="topbar">
+      <form class="lang-form" method="post" action="/lang">
+        <label for="lang-select">{{index .T "language.label"}}</label>
+        <select id="lang-select" name="lang" onchange="this.form.submit()">
+          <option value="en" {{if eq .Lang "en"}}selected{{end}}>{{index .T "language.en"}}</option>
+          <option value="it" {{if eq .Lang "it"}}selected{{end}}>{{index .T "language.it"}}</option>
+        </select>
       </form>
     </div>
+    <h1>localCA</h1>
+    <p class="muted">{{index .T "subtitle"}}</p>
 
     {{if .Message}}<div class="msg">{{.Message}}</div>{{end}}
     {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
