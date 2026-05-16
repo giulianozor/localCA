@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -90,6 +91,8 @@ func main() {
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
 	mux.HandleFunc("/certs/delete", a.handleDeleteCert)
 	mux.HandleFunc("/download", a.handleDownload)
+	mux.HandleFunc("/static/styles.css", handleStyles)
+	mux.HandleFunc("/static/app.js", handleAppJS)
 
 	addr := fmt.Sprintf(":%d", port)
 	log.Printf("localCA UI available on all interfaces (port %d), access via http://<host-ip-or-hostname>:%d", port, port)
@@ -416,6 +419,24 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 	}
 }
 
+func handleStyles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	_, _ = io.WriteString(w, stylesCSS)
+}
+
+func handleAppJS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	_, _ = io.WriteString(w, appJS)
+}
+
 func (a *app) resolveCertificateDir(id string) (string, string, error) {
 	if id == "" {
 		return "", "", errors.New("id certificato mancante")
@@ -702,121 +723,11 @@ func writePEM(path, pemType string, der []byte, perm os.FileMode) error {
 	return os.WriteFile(path, b, perm)
 }
 
-const indexHTML = `<!doctype html>
-<html lang="{{.Lang}}">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>localCA</title>
-  <style>
-    :root { color-scheme: dark; }
-    body { background: #111827; color: #e5e7eb; font-family: Inter, system-ui, sans-serif; margin: 0; }
-    .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
-    .topbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
-    .card { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 18px; margin-bottom: 16px; }
-    h1,h2 { margin-top: 0; }
-    label { display: block; margin-top: 10px; font-size: 0.95rem; }
-    input,select { width: 100%; padding: 8px; background: #111827; color: #e5e7eb; border: 1px solid #4b5563; border-radius: 6px; margin-top: 4px; }
-    button { margin-top: 12px; background: #2563eb; color: white; border: none; border-radius: 6px; padding: 10px 14px; cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border-bottom: 1px solid #374151; text-align: left; padding: 8px; vertical-align: top; }
-    a { color: #93c5fd; }
-    .msg { background: #064e3b; border: 1px solid #10b981; color: #d1fae5; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
-    .err { background: #7f1d1d; border: 1px solid #f87171; color: #fee2e2; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
-    .muted { color: #9ca3af; font-size: 0.9rem; }
-    .lang-form { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
-    .lang-form label { margin-top: 0; white-space: nowrap; }
-    .lang-form select { width: auto; min-width: 110px; margin-top: 0; padding: 6px 8px; }
-    .inline-form { display: inline; }
-    .danger { background: #b91c1c; margin-top: 0; padding: 6px 10px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="topbar">
-      <form class="lang-form" method="post" action="/lang">
-        <label for="lang-select">{{index .T "language.label"}}</label>
-        <select id="lang-select" name="lang" onchange="this.form.submit()">
-          <option value="en" {{if eq .Lang "en"}}selected{{end}}>{{index .T "language.en"}}</option>
-          <option value="it" {{if eq .Lang "it"}}selected{{end}}>{{index .T "language.it"}}</option>
-        </select>
-      </form>
-    </div>
-    <h1>localCA</h1>
-    <p class="muted">{{index .T "subtitle"}}</p>
+//go:embed ui/index.html
+var indexHTML string
 
-    {{if .Message}}<div class="msg">{{.Message}}</div>{{end}}
-    {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+//go:embed ui/styles.css
+var stylesCSS string
 
-    {{if not .HasCA}}
-      <div class="card">
-        <h2>{{index .T "ca.create.title"}}</h2>
-        <p class="muted">{{printf (index .T "ca.create.validity") .CAYears}}</p>
-        <form method="post" action="/ca/create">
-          <label>{{index .T "ca.create.cn_label"}}<input name="ca_common_name" placeholder="{{index .T "ca.create.cn_placeholder"}}"></label>
-          <label>{{index .T "ca.create.org_label"}}<input name="organization" placeholder="{{index .T "ca.create.org_placeholder"}}"></label>
-          <label>{{index .T "ca.create.country_label"}}<input name="country" placeholder="{{index .T "ca.create.country_placeholder"}}"></label>
-          <button type="submit">{{index .T "ca.create.button"}}</button>
-        </form>
-      </div>
-    {{else}}
-      <div class="card">
-        <h2>{{index .T "ca.active.title"}}</h2>
-        <p><strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.CACommonName}}<br>
-           <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.Organization}}<br>
-           <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.Country}}<br>
-           <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.CAValidityYears}}</p>
-        <p>{{index .T "export.label"}}: <a href="/download?kind=ca-cert-pem">CA cert PEM</a> · <a href="/download?kind=ca-cert-der">CA cert DER</a> · <a href="/download?kind=ca-key-pem">CA key PEM</a> · <a href="/download?kind=ca-key-pkcs8-pem">CA key PKCS8 PEM</a> · <a href="/download?kind=ca-key-der">CA key DER</a></p>
-      </div>
-
-      <div class="card">
-        <h2>{{index .T "cert.create.title"}}</h2>
-        <form method="post" action="/certs/create">
-          <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="dev.local"></label>
-          <label>{{index .T "cert.create.sans_label"}}
-            <input name="sans" placeholder="dev.local, api.locsl, 127.0.0.1">
-          </label>
-          <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
-            <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
-          </label>
-          <button type="submit">{{index .T "cert.create.button"}}</button>
-        </form>
-      </div>
-
-      <div class="card">
-        <h2>{{index .T "cert.list.title"}}</h2>
-        <form method="get" action="/">
-          <label>{{index .T "cert.list.filter_label"}}<input name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}"></label>
-        </form>
-        <table>
-          <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
-          <tbody>
-            {{range .Certificates}}
-              <tr>
-                <td>{{.ID}}</td>
-                <td>{{.CommonName}}</td>
-                <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
-                <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
-                <td>
-                  <a href="/download?kind=cert-pem&id={{.ID}}">cert PEM</a> ·
-                  <a href="/download?kind=cert-der&id={{.ID}}">cert DER</a> ·
-                  <a href="/download?kind=chain-pem&id={{.ID}}">chain PEM</a> ·
-                  <a href="/download?kind=key-pem&id={{.ID}}">key PEM</a> ·
-                  <a href="/download?kind=key-pkcs8-pem&id={{.ID}}">key PKCS8 PEM</a> ·
-                  <a href="/download?kind=key-der&id={{.ID}}">key DER</a> ·
-                  <form class="inline-form" method="post" action="/certs/delete" onsubmit="return confirm('{{js (index $.T "cert.delete.confirm")}}');">
-                    <input type="hidden" name="id" value="{{.ID}}">
-                    <button class="danger" type="submit">{{index $.T "cert.list.delete"}}</button>
-                  </form>
-                </td>
-              </tr>
-            {{else}}
-              <tr><td colspan="5" class="muted">{{index .T "cert.list.none"}}</td></tr>
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-    {{end}}
-  </div>
-</body>
-</html>`
+//go:embed ui/app.js
+var appJS string

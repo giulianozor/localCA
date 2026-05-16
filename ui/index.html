@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>localCA</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <form class="lang-form" method="post" action="/lang">
+        <label for="lang-select">{{index .T "language.label"}}</label>
+        <select id="lang-select" class="js-lang-select" name="lang">
+          <option value="en" {{if eq .Lang "en"}}selected{{end}}>{{index .T "language.en"}}</option>
+          <option value="it" {{if eq .Lang "it"}}selected{{end}}>{{index .T "language.it"}}</option>
+        </select>
+      </form>
+    </div>
+    <h1>localCA</h1>
+    <p class="muted">{{index .T "subtitle"}}</p>
+
+    {{if .Message}}<div class="msg">{{.Message}}</div>{{end}}
+    {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+
+    {{if not .HasCA}}
+      <div class="card">
+        <h2>{{index .T "ca.create.title"}}</h2>
+        <p class="muted">{{printf (index .T "ca.create.validity") .CAYears}}</p>
+        <form method="post" action="/ca/create">
+          <label>{{index .T "ca.create.cn_label"}}<input name="ca_common_name" placeholder="{{index .T "ca.create.cn_placeholder"}}"></label>
+          <label>{{index .T "ca.create.org_label"}}<input name="organization" placeholder="{{index .T "ca.create.org_placeholder"}}"></label>
+          <label>{{index .T "ca.create.country_label"}}<input name="country" placeholder="{{index .T "ca.create.country_placeholder"}}"></label>
+          <button type="submit">{{index .T "ca.create.button"}}</button>
+        </form>
+      </div>
+    {{else}}
+      <div class="card">
+        <h2>{{index .T "ca.active.title"}}</h2>
+        <p><strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.CACommonName}}<br>
+           <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.Organization}}<br>
+           <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.Country}}<br>
+           <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.CAValidityYears}}</p>
+        <p>{{index .T "export.label"}}: <a href="/download?kind=ca-cert-pem">CA cert PEM</a> · <a href="/download?kind=ca-cert-der">CA cert DER</a> · <a href="/download?kind=ca-key-pem">CA key PEM</a> · <a href="/download?kind=ca-key-pkcs8-pem">CA key PKCS8 PEM</a> · <a href="/download?kind=ca-key-der">CA key DER</a></p>
+      </div>
+
+      <div class="card">
+        <h2>{{index .T "cert.create.title"}}</h2>
+        <form method="post" action="/certs/create">
+          <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="dev.local"></label>
+          <label>{{index .T "cert.create.sans_label"}}
+            <input name="sans" placeholder="dev.local, api.locsl, 127.0.0.1">
+          </label>
+          <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
+            <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
+          </label>
+          <button type="submit">{{index .T "cert.create.button"}}</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>{{index .T "cert.list.title"}}</h2>
+        <form method="get" action="/">
+          <label>{{index .T "cert.list.filter_label"}}<input name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}"></label>
+        </form>
+        <table>
+          <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
+          <tbody>
+            {{range .Certificates}}
+              <tr>
+                <td>{{.ID}}</td>
+                <td>{{.CommonName}}</td>
+                <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
+                <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
+                <td>
+                  <a href="/download?kind=cert-pem&id={{.ID}}">cert PEM</a> ·
+                  <a href="/download?kind=cert-der&id={{.ID}}">cert DER</a> ·
+                  <a href="/download?kind=chain-pem&id={{.ID}}">chain PEM</a> ·
+                  <a href="/download?kind=key-pem&id={{.ID}}">key PEM</a> ·
+                  <a href="/download?kind=key-pkcs8-pem&id={{.ID}}">key PKCS8 PEM</a> ·
+                  <a href="/download?kind=key-der&id={{.ID}}">key DER</a> ·
+                  <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <button class="danger" type="submit">{{index $.T "cert.list.delete"}}</button>
+                  </form>
+                </td>
+              </tr>
+            {{else}}
+              <tr><td colspan="5" class="muted">{{index .T "cert.list.none"}}</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    {{end}}
+  </div>
+</body>
+</html>
