@@ -121,7 +121,7 @@ func parseArgs(args []string) (string, int, string, error) {
 func loadTranslations() (map[string]map[string]string, error) {
 	result := map[string]map[string]string{}
 	for _, lang := range []string{"it", "en"} {
-		path := filepath.Join("i18n", lang+".hson")
+		path := filepath.Join("i18n", lang+".json")
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
