@@ -6,8 +6,8 @@
     let filterTimeout = null;
     const refreshTable = async () => {
       try {
-        const params = new URLSearchParams({ q: certFilterInput.value });
-        const response = await window.fetch(`/certs/table?${params.toString()}`);
+        const query = window.encodeURIComponent(certFilterInput.value);
+        const response = await window.fetch(`/certs/table?q=${query}`);
         if (!response.ok) {
           window.console.error(`Unable to refresh certificates table: HTTP ${response.status}`);
           return;

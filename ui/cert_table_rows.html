@@ -13,7 +13,7 @@
       <a href="/download?kind=key-der&id={{.ID}}">key DER</a> ·
       <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
         <input type="hidden" name="id" value="{{.ID}}">
-        <button class="danger" type="submit">{{index $.T "cert.list.delete"}}</button>
+        <button class="danger" type="submit" aria-label="{{index $.T "cert.list.delete"}} {{.ID}}">{{index $.T "cert.list.delete"}}</button>
       </form>
     </td>
   </tr>

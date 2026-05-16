@@ -272,9 +272,8 @@ func (a *app) handleCertTable(w http.ResponseWriter, r *http.Request) {
 		Certificates: certs,
 		T:            a.translations[lang],
 	}
-	tmpl := template.Must(template.New("cert-table-rows").Parse(certTableRowsHTML))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := certTableRowsTemplate.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -766,3 +765,5 @@ var appJS string
 
 //go:embed ui/cert_table_rows.html
 var certTableRowsHTML string
+
+var certTableRowsTemplate = template.Must(template.New("cert-table-rows").Parse(certTableRowsHTML))
