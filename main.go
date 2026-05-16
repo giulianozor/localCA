@@ -79,7 +79,7 @@ func main() {
 	mux.HandleFunc("/download", a.handleDownload)
 
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
-	log.Printf("localCA UI available on all interfaces (%s), access via http://<host-ip-or-hostname>:%d", addr, port)
+	log.Printf("localCA UI available on all interfaces (port %d), access via http://<host-ip-or-hostname>:%d", port, port)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
