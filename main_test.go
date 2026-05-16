@@ -76,7 +76,7 @@ func TestResolveCertificateDir(t *testing.T) {
 
 func TestParseArgs(t *testing.T) {
 	t.Run("default port", func(t *testing.T) {
-		dataDir, port, err := parseArgs([]string{"/tmp/data"})
+		dataDir, port, lang, err := parseArgs([]string{"/tmp/data"})
 		if err != nil {
 			t.Fatalf("parseArgs() error = %v", err)
 		}
@@ -86,20 +86,32 @@ func TestParseArgs(t *testing.T) {
 		if port != 8080 {
 			t.Fatalf("parseArgs() port = %d, want 8080", port)
 		}
+		if lang != "en" {
+			t.Fatalf("parseArgs() lang = %s, want en", lang)
+		}
 	})
 
 	t.Run("custom port", func(t *testing.T) {
-		_, port, err := parseArgs([]string{"-port", "9443", "/tmp/data"})
+		_, port, lang, err := parseArgs([]string{"-port", "9443", "-lang", "it", "/tmp/data"})
 		if err != nil {
 			t.Fatalf("parseArgs() error = %v", err)
 		}
 		if port != 9443 {
 			t.Fatalf("parseArgs() port = %d, want 9443", port)
 		}
+		if lang != "it" {
+			t.Fatalf("parseArgs() lang = %s, want it", lang)
+		}
 	})
 
 	t.Run("invalid port", func(t *testing.T) {
-		if _, _, err := parseArgs([]string{"-port", "70000", "/tmp/data"}); err == nil {
+		if _, _, _, err := parseArgs([]string{"-port", "70000", "/tmp/data"}); err == nil {
+			t.Fatal("parseArgs() expected error")
+		}
+	})
+
+	t.Run("invalid language", func(t *testing.T) {
+		if _, _, _, err := parseArgs([]string{"-lang", "fr", "/tmp/data"}); err == nil {
 			t.Fatal("parseArgs() expected error")
 		}
 	})

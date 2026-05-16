@@ -29,10 +29,13 @@ import (
 const (
 	caYears             = 100
 	maxCertValidityYear = 30
+	defaultLanguage     = "en"
 )
 
 type app struct {
-	dataDir string
+	dataDir      string
+	defaultLang  string
+	translations map[string]map[string]string
 }
 
 type config struct {
@@ -41,6 +44,7 @@ type config struct {
 	Organization    string    `json:"organization"`
 	Country         string    `json:"country"`
 	CAValidityYears int       `json:"ca_validity_years"`
+	Language        string    `json:"language"`
 }
 
 type certMetadata struct {
@@ -60,20 +64,27 @@ type pageData struct {
 	Error            string
 	DefaultCertYears int
 	MaxCertYears     int
+	Lang             string
+	T                map[string]string
 }
 
 func main() {
-	dataDir, port, err := parseArgs(os.Args[1:])
+	dataDir, port, lang, err := parseArgs(os.Args[1:])
 	if err != nil {
-		log.Fatalf("usage: %s [-port 8080] <data-directory>: %v", os.Args[0], err)
+		log.Fatalf("usage: %s [-port 8080] [-lang en|it] <data-directory>: %v", os.Args[0], err)
 	}
 	if err := os.MkdirAll(filepath.Join(dataDir, "certs"), 0o750); err != nil {
 		log.Fatalf("unable to create data directory: %v", err)
 	}
+	translations, err := loadTranslations()
+	if err != nil {
+		log.Fatalf("unable to load translations: %v", err)
+	}
 
-	a := &app{dataDir: dataDir}
+	a := &app{dataDir: dataDir, defaultLang: lang, translations: translations}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", a.handleIndex)
+	mux.HandleFunc("/lang", a.handleSetLanguage)
 	mux.HandleFunc("/ca/create", a.handleCreateCA)
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
 	mux.HandleFunc("/download", a.handleDownload)
@@ -86,21 +97,75 @@ func main() {
 	}
 }
 
-func parseArgs(args []string) (string, int, error) {
+func parseArgs(args []string) (string, int, string, error) {
 	fs := flag.NewFlagSet("localCA", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	port := fs.Int("port", 8080, "porta HTTP del server web")
+	lang := fs.String("lang", defaultLanguage, "lingua UI (en|it)")
 	if err := fs.Parse(args); err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 	if *port < 1 || *port > 65535 {
-		return "", 0, errors.New("porta non valida: usare un valore tra 1 e 65535")
+		return "", 0, "", errors.New("invalid port: use a value between 1 and 65535")
+	}
+	if !isSupportedLanguage(*lang) {
+		return "", 0, "", errors.New("invalid language: use en or it")
 	}
 	remaining := fs.Args()
 	if len(remaining) != 1 {
-		return "", 0, errors.New("specificare il percorso dati")
+		return "", 0, "", errors.New("specify data directory path")
 	}
-	return remaining[0], *port, nil
+	return remaining[0], *port, *lang, nil
+}
+
+func loadTranslations() (map[string]map[string]string, error) {
+	result := map[string]map[string]string{}
+	for _, lang := range []string{"it", "en"} {
+		path := filepath.Join("i18n", lang+".hson")
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		var stringsMap map[string]string
+		if err := json.Unmarshal(b, &stringsMap); err != nil {
+			return nil, fmt.Errorf("invalid %s: %w", path, err)
+		}
+		result[lang] = stringsMap
+	}
+	return result, nil
+}
+
+func isSupportedLanguage(lang string) bool {
+	switch lang {
+	case "en", "it":
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *app) currentLanguage(cfg config, hasCA bool) string {
+	if hasCA && isSupportedLanguage(cfg.Language) {
+		return cfg.Language
+	}
+	if isSupportedLanguage(a.defaultLang) {
+		return a.defaultLang
+	}
+	return defaultLanguage
+}
+
+func (a *app) translate(lang, key string) string {
+	if m, ok := a.translations[lang]; ok {
+		if v, ok := m[key]; ok {
+			return v
+		}
+	}
+	if m, ok := a.translations[defaultLanguage]; ok {
+		if v, ok := m[key]; ok {
+			return v
+		}
+	}
+	return key
 }
 
 func (a *app) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -109,6 +174,33 @@ func (a *app) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.renderIndex(w, r.URL.Query().Get("msg"), r.URL.Query().Get("err"))
+}
+
+func (a *app) handleSetLanguage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	lang := strings.TrimSpace(strings.ToLower(r.FormValue("lang")))
+	if !isSupportedLanguage(lang) {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(a.defaultLang, "msg.invalid_language")), http.StatusSeeOther)
+		return
+	}
+	cfg, hasCA, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !hasCA {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(a.defaultLang, "msg.create_ca_before_language_change")), http.StatusSeeOther)
+		return
+	}
+	cfg.Language = lang
+	if err := a.saveConfig(cfg); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.language_updated")), http.StatusSeeOther)
 }
 
 func (a *app) renderIndex(w http.ResponseWriter, msg, errMsg string) {
@@ -127,6 +219,7 @@ func (a *app) renderIndex(w http.ResponseWriter, msg, errMsg string) {
 	sort.Slice(certs, func(i, j int) bool {
 		return certs[i].CreatedAt.After(certs[j].CreatedAt)
 	})
+	lang := a.currentLanguage(cfg, hasCA)
 
 	data := pageData{
 		HasCA:            hasCA,
@@ -137,6 +230,8 @@ func (a *app) renderIndex(w http.ResponseWriter, msg, errMsg string) {
 		Error:            errMsg,
 		DefaultCertYears: 1,
 		MaxCertYears:     maxCertValidityYear,
+		Lang:             lang,
+		T:                a.translations[lang],
 	}
 
 	tmpl := template.Must(template.New("index").Parse(indexHTML))
@@ -151,11 +246,14 @@ func (a *app) handleCreateCA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, has, err := a.loadConfig(); err != nil {
+	cfg, has, err := a.loadConfig()
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	} else if has {
-		http.Redirect(w, r, "/?err=La+CA+esiste+gia", http.StatusSeeOther)
+	}
+	lang := a.currentLanguage(cfg, has)
+	if has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_already_exists")), http.StatusSeeOther)
 		return
 	}
 
@@ -177,7 +275,7 @@ func (a *app) handleCreateCA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/?msg=CA+creata+con+successo", http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.ca_created")), http.StatusSeeOther)
 }
 
 func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
@@ -186,11 +284,14 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, has, err := a.loadConfig(); err != nil {
+	cfg, has, err := a.loadConfig()
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	} else if !has {
-		http.Redirect(w, r, "/?err=Crea+prima+la+CA", http.StatusSeeOther)
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
 
@@ -215,7 +316,7 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/?msg=Certificato+creato+con+successo", http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.cert_created")), http.StatusSeeOther)
 }
 
 func (a *app) handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -384,12 +485,9 @@ func (a *app) createCA(cn, org, country string) error {
 		Organization:    org,
 		Country:         country,
 		CAValidityYears: caYears,
+		Language:        a.defaultLang,
 	}
-	cfgJSON, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(a.dataDir, "config.json"), cfgJSON, 0o640)
+	return a.saveConfig(cfg)
 }
 
 func (a *app) createServerCert(commonName string, sans []string, years int) error {
@@ -509,6 +607,14 @@ func (a *app) loadConfig() (config, bool, error) {
 	return cfg, true, nil
 }
 
+func (a *app) saveConfig(cfg config) error {
+	cfgJSON, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(a.dataDir, "config.json"), cfgJSON, 0o640)
+}
+
 func (a *app) listCerts() ([]certMetadata, error) {
 	entries, err := os.ReadDir(filepath.Join(a.dataDir, "certs"))
 	if err != nil {
@@ -546,7 +652,7 @@ func writePEM(path, pemType string, der []byte, perm os.FileMode) error {
 }
 
 const indexHTML = `<!doctype html>
-<html lang="it">
+<html lang="{{.Lang}}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -558,7 +664,7 @@ const indexHTML = `<!doctype html>
     .card { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 18px; margin-bottom: 16px; }
     h1,h2 { margin-top: 0; }
     label { display: block; margin-top: 10px; font-size: 0.95rem; }
-    input { width: 100%; padding: 8px; background: #111827; color: #e5e7eb; border: 1px solid #4b5563; border-radius: 6px; margin-top: 4px; }
+    input,select { width: 100%; padding: 8px; background: #111827; color: #e5e7eb; border: 1px solid #4b5563; border-radius: 6px; margin-top: 4px; }
     button { margin-top: 12px; background: #2563eb; color: white; border: none; border-radius: 6px; padding: 10px 14px; cursor: pointer; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border-bottom: 1px solid #374151; text-align: left; padding: 8px; vertical-align: top; }
@@ -566,62 +672,76 @@ const indexHTML = `<!doctype html>
     .msg { background: #064e3b; border: 1px solid #10b981; color: #d1fae5; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
     .err { background: #7f1d1d; border: 1px solid #f87171; color: #fee2e2; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
     .muted { color: #9ca3af; font-size: 0.9rem; }
+    .lang-form { max-width: 280px; margin-bottom: 16px; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>localCA</h1>
-    <p class="muted">Gestione CA locale e certificati server (FQDN, IP, .local/.locsl).</p>
+    <p class="muted">{{index .T "subtitle"}}</p>
+
+    <div class="card lang-form">
+      <h2>{{index .T "language.title"}}</h2>
+      <form method="post" action="/lang">
+        <label>{{index .T "language.label"}}
+          <select name="lang">
+            <option value="en" {{if eq .Lang "en"}}selected{{end}}>{{index .T "language.en"}}</option>
+            <option value="it" {{if eq .Lang "it"}}selected{{end}}>{{index .T "language.it"}}</option>
+          </select>
+        </label>
+        <button type="submit">{{index .T "language.button"}}</button>
+      </form>
+    </div>
 
     {{if .Message}}<div class="msg">{{.Message}}</div>{{end}}
     {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
 
     {{if not .HasCA}}
       <div class="card">
-        <h2>Crea Certificate Authority locale</h2>
-        <p class="muted">La validità della CA viene impostata automaticamente a {{.CAYears}} anni.</p>
+        <h2>{{index .T "ca.create.title"}}</h2>
+        <p class="muted">{{printf (index .T "ca.create.validity") .CAYears}}</p>
         <form method="post" action="/ca/create">
-          <label>Common Name (default: localCA Root)<input name="ca_common_name" placeholder="localCA Root"></label>
-          <label>Organization (default: localCA)<input name="organization" placeholder="localCA"></label>
-          <label>Country (default: IT)<input name="country" placeholder="IT"></label>
-          <button type="submit">Crea CA</button>
+          <label>{{index .T "ca.create.cn_label"}}<input name="ca_common_name" placeholder="{{index .T "ca.create.cn_placeholder"}}"></label>
+          <label>{{index .T "ca.create.org_label"}}<input name="organization" placeholder="{{index .T "ca.create.org_placeholder"}}"></label>
+          <label>{{index .T "ca.create.country_label"}}<input name="country" placeholder="{{index .T "ca.create.country_placeholder"}}"></label>
+          <button type="submit">{{index .T "ca.create.button"}}</button>
         </form>
       </div>
     {{else}}
       <div class="card">
-        <h2>CA locale attiva</h2>
-        <p><strong>CN:</strong> {{.Config.CACommonName}}<br>
-           <strong>Organizzazione:</strong> {{.Config.Organization}}<br>
-           <strong>Paese:</strong> {{.Config.Country}}<br>
-           <strong>Validità:</strong> {{.Config.CAValidityYears}} anni</p>
-        <p>Esporta: <a href="/download?kind=ca-cert-pem">CA cert PEM</a> · <a href="/download?kind=ca-cert-der">CA cert DER</a> · <a href="/download?kind=ca-key-pem">CA key PEM</a> · <a href="/download?kind=ca-key-pkcs8-pem">CA key PKCS8 PEM</a> · <a href="/download?kind=ca-key-der">CA key DER</a></p>
+        <h2>{{index .T "ca.active.title"}}</h2>
+        <p><strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.CACommonName}}<br>
+           <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.Organization}}<br>
+           <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.Country}}<br>
+           <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.CAValidityYears}}</p>
+        <p>{{index .T "export.label"}}: <a href="/download?kind=ca-cert-pem">CA cert PEM</a> · <a href="/download?kind=ca-cert-der">CA cert DER</a> · <a href="/download?kind=ca-key-pem">CA key PEM</a> · <a href="/download?kind=ca-key-pkcs8-pem">CA key PKCS8 PEM</a> · <a href="/download?kind=ca-key-der">CA key DER</a></p>
       </div>
 
       <div class="card">
-        <h2>Crea certificato server</h2>
+        <h2>{{index .T "cert.create.title"}}</h2>
         <form method="post" action="/certs/create">
-          <label>Common Name (opzionale: default primo SAN)<input name="common_name" placeholder="dev.local"></label>
-          <label>SAN (obbligatorio, separa con virgole: FQDN, IP, .local/.locsl)
+          <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="dev.local"></label>
+          <label>{{index .T "cert.create.sans_label"}}
             <input name="sans" placeholder="dev.local, api.locsl, 127.0.0.1">
           </label>
-          <label>Validità in anni (1-{{.MaxCertYears}}, default {{.DefaultCertYears}})
+          <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
             <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
           </label>
-          <button type="submit">Crea certificato</button>
+          <button type="submit">{{index .T "cert.create.button"}}</button>
         </form>
       </div>
 
       <div class="card">
-        <h2>Certificati emessi</h2>
+        <h2>{{index .T "cert.list.title"}}</h2>
         <table>
-          <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>Validità</th><th>Export</th></tr></thead>
+          <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
           <tbody>
             {{range .Certificates}}
               <tr>
                 <td>{{.ID}}</td>
                 <td>{{.CommonName}}</td>
                 <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
-                <td>{{.ValidityYears}} anni</td>
+                <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
                 <td>
                   <a href="/download?kind=cert-pem&id={{.ID}}">cert PEM</a> ·
                   <a href="/download?kind=cert-der&id={{.ID}}">cert DER</a> ·
@@ -632,7 +752,7 @@ const indexHTML = `<!doctype html>
                 </td>
               </tr>
             {{else}}
-              <tr><td colspan="5" class="muted">Nessun certificato emesso.</td></tr>
+              <tr><td colspan="5" class="muted">{{index .T "cert.list.none"}}</td></tr>
             {{end}}
           </tbody>
         </table>

@@ -1,37 +1,42 @@
 # localCA
 
-Applicazione Go con interfaccia web (tema scuro) per gestire una Certificate Authority locale e certificati server locali.
+Go web application (dark theme) to manage a local Certificate Authority and issue local server certificates.
 
-## Avvio
+## Run
 
 ```bash
-go run . /percorso/dati
+go run . /path/to/data
 ```
 
 ```bash
-go run . -port 9090 /percorso/dati
+go run . -port 9090 -lang it /path/to/data
 ```
 
-L'unico parametro da riga di comando è il percorso dove salvare dati e configurazione.
-È disponibile un flag opzionale `-port` (default `8080`) per impostare la porta web.
-L'applicazione ascolta su tutte le interfacce di rete ed espone la UI su `http://<ip-host>:<porta>`.
+Required CLI argument:
+- data directory path used to persist configuration and artifacts
 
-> ⚠️ **Sicurezza**: esponendo la UI su tutte le interfacce, il pannello di gestione CA è raggiungibile dalla rete. Usare solo in rete fidata o limitare l'accesso con firewall/regole di rete.
+Optional flags:
+- `-port` (default `8080`) sets the web server port
+- `-lang` (default `en`) sets the initial UI language (`en` or `it`)
 
-## Funzionalità
+The application listens on all network interfaces and exposes the UI at `http://<host-ip-or-hostname>:<port>`.
 
-- Creazione CA locale con validità fissa a **100 anni**
-- Creazione certificati server con SAN DNS/IP (`FQDN`, IP, host `.local` o `.locsl`), validità selezionabile da **1 a 30 anni**
-- Esportazione via web in formati diffusi:
-  - Certificati: PEM, DER, chain PEM
-  - Chiavi private: PEM (PKCS#1), PEM (PKCS#8), DER
-- Configurazione (`config.json`) creata alla creazione della CA e salvata nella cartella dati
+> ⚠️ **Security**: when bound on all interfaces, the CA management UI is reachable from the network. Use only in trusted networks or restrict access with firewall/network rules.
 
-## Struttura dati
+## Features
 
-Nella cartella passata da CLI vengono creati:
+- Local CA creation with fixed **100-year** validity
+- Server certificate creation with DNS/IP SANs (`FQDN`, IP, `.local`, `.locsl`) and selectable validity from **1 to 30 years**
+- Web export in common formats:
+  - Certificates: PEM, DER, chain PEM
+  - Private keys: PEM (PKCS#1), PEM (PKCS#8), DER
+- UI language selector (English/Italian) with preference persisted in `config.json`
+
+## Data layout
+
+The provided data directory contains:
 
 - `config.json`
 - `ca-cert.pem`, `ca-cert.der`
 - `ca-key.pem`, `ca-key-pkcs8.pem`, `ca-key.der`
-- `certs/<id>/...` per ogni certificato emesso
+- `certs/<id>/...` for each issued certificate
