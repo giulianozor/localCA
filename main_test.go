@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestParseValidityYears(t *testing.T) {
 	tests := []struct {
@@ -44,4 +48,28 @@ func TestParseSANs(t *testing.T) {
 			t.Fatal("parseSANs() expected error")
 		}
 	})
+}
+
+func TestResolveCertificateDir(t *testing.T) {
+	tempDir := t.TempDir()
+	a := &app{dataDir: tempDir}
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs", "cert-1"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	gotPath, gotID, err := a.resolveCertificateDir("cert-1")
+	if err != nil {
+		t.Fatalf("resolveCertificateDir() error = %v", err)
+	}
+	if gotID != "cert-1" {
+		t.Fatalf("resolveCertificateDir() id = %s, want cert-1", gotID)
+	}
+	wantPath := filepath.Join(tempDir, "certs", "cert-1")
+	if gotPath != wantPath {
+		t.Fatalf("resolveCertificateDir() path = %s, want %s", gotPath, wantPath)
+	}
+
+	if _, _, err := a.resolveCertificateDir("../cert-1"); err == nil {
+		t.Fatal("resolveCertificateDir() expected error for invalid id")
+	}
 }

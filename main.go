@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -238,11 +239,10 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 	case "ca-key-der":
 		return filepath.Join(a.dataDir, "ca-key.der"), "ca-key.der", "application/octet-stream", nil
 	case "cert-pem", "cert-der", "chain-pem", "key-pem", "key-pkcs8-pem", "key-der":
-		if id == "" {
-			return "", "", "", errors.New("id certificato mancante")
+		base, safeID, err := a.resolveCertificateDir(id)
+		if err != nil {
+			return "", "", "", err
 		}
-		safeID := filepath.Base(id)
-		base := filepath.Join(a.dataDir, "certs", safeID)
 		switch kind {
 		case "cert-pem":
 			return filepath.Join(base, "cert.pem"), safeID + "-cert.pem", "application/x-pem-file", nil
@@ -260,6 +260,22 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 	default:
 		return "", "", "", errors.New("tipo download non supportato")
 	}
+}
+
+func (a *app) resolveCertificateDir(id string) (string, string, error) {
+	if id == "" {
+		return "", "", errors.New("id certificato mancante")
+	}
+	entries, err := os.ReadDir(filepath.Join(a.dataDir, "certs"))
+	if err != nil {
+		return "", "", errors.New("archivio certificati non disponibile")
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() == id {
+			return filepath.Join(a.dataDir, "certs", entry.Name()), entry.Name(), nil
+		}
+	}
+	return "", "", errors.New("id certificato non valido")
 }
 
 func parseValidityYears(raw string) (int, error) {
@@ -414,7 +430,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int) erro
 		return err
 	}
 
-	id := certID(commonName)
+	id := certID()
 	certDir := filepath.Join(a.dataDir, "certs", id)
 	if err := os.MkdirAll(certDir, 0o750); err != nil {
 		return err
@@ -498,24 +514,12 @@ func (a *app) listCerts() ([]certMetadata, error) {
 	return certs, nil
 }
 
-func certID(commonName string) string {
-	slug := strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			return r
-		}
-		if r >= 'A' && r <= 'Z' {
-			return r + ('a' - 'A')
-		}
-		if r == '-' || r == '.' {
-			return r
-		}
-		return '-'
-	}, commonName)
-	slug = strings.Trim(slug, "-")
-	if slug == "" {
-		slug = "cert"
+func certID() string {
+	token := make([]byte, 8)
+	if _, err := rand.Read(token); err != nil {
+		return fmt.Sprintf("cert-%d", time.Now().UnixNano())
 	}
-	return fmt.Sprintf("%s-%d", slug, time.Now().UnixNano())
+	return fmt.Sprintf("cert-%d-%s", time.Now().UnixNano(), hex.EncodeToString(token))
 }
 
 func writePEM(path, pemType string, der []byte, perm os.FileMode) error {
