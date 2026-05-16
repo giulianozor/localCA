@@ -73,3 +73,34 @@ func TestResolveCertificateDir(t *testing.T) {
 		t.Fatal("resolveCertificateDir() expected error for invalid id")
 	}
 }
+
+func TestParseArgs(t *testing.T) {
+	t.Run("default port", func(t *testing.T) {
+		dataDir, port, err := parseArgs([]string{"/tmp/data"})
+		if err != nil {
+			t.Fatalf("parseArgs() error = %v", err)
+		}
+		if dataDir != "/tmp/data" {
+			t.Fatalf("parseArgs() dataDir = %s, want /tmp/data", dataDir)
+		}
+		if port != 8080 {
+			t.Fatalf("parseArgs() port = %d, want 8080", port)
+		}
+	})
+
+	t.Run("custom port", func(t *testing.T) {
+		_, port, err := parseArgs([]string{"-port", "9443", "/tmp/data"})
+		if err != nil {
+			t.Fatalf("parseArgs() error = %v", err)
+		}
+		if port != 9443 {
+			t.Fatalf("parseArgs() port = %d, want 9443", port)
+		}
+	})
+
+	t.Run("invalid port", func(t *testing.T) {
+		if _, _, err := parseArgs([]string{"-port", "70000", "/tmp/data"}); err == nil {
+			t.Fatal("parseArgs() expected error")
+		}
+	})
+}

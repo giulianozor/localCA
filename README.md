@@ -8,8 +8,13 @@ Applicazione Go con interfaccia web (tema scuro) per gestire una Certificate Aut
 go run . /percorso/dati
 ```
 
+```bash
+go run . -port 9090 /percorso/dati
+```
+
 L'unico parametro da riga di comando è il percorso dove salvare dati e configurazione.
-L'applicazione espone la UI su `http://localhost:8080`.
+È disponibile un flag opzionale `-port` (default `8080`) per impostare la porta web.
+L'applicazione espone la UI su `http://localhost:<porta>`.
 
 ## Funzionalità
 

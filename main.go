@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"flag"
 	"fmt"
 	"html/template"
 	"io"
@@ -62,11 +63,10 @@ type pageData struct {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		log.Fatalf("usage: %s <data-directory>", os.Args[0])
+	dataDir, port, err := parseArgs(os.Args[1:])
+	if err != nil {
+		log.Fatalf("usage: %s [-port 8080] <data-directory>: %v", os.Args[0], err)
 	}
-
-	dataDir := os.Args[1]
 	if err := os.MkdirAll(filepath.Join(dataDir, "certs"), 0o750); err != nil {
 		log.Fatalf("unable to create data directory: %v", err)
 	}
@@ -78,11 +78,28 @@ func main() {
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
 	mux.HandleFunc("/download", a.handleDownload)
 
-	addr := ":8080"
+	addr := fmt.Sprintf(":%d", port)
 	log.Printf("localCA UI available at http://localhost%s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func parseArgs(args []string) (string, int, error) {
+	fs := flag.NewFlagSet("localCA", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	port := fs.Int("port", 8080, "porta HTTP del server web")
+	if err := fs.Parse(args); err != nil {
+		return "", 0, err
+	}
+	if *port < 1 || *port > 65535 {
+		return "", 0, errors.New("porta non valida: usare un valore tra 1 e 65535")
+	}
+	remaining := fs.Args()
+	if len(remaining) != 1 {
+		return "", 0, errors.New("specificare il percorso dati")
+	}
+	return remaining[0], *port, nil
 }
 
 func (a *app) handleIndex(w http.ResponseWriter, r *http.Request) {
