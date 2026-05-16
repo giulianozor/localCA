@@ -5,12 +5,17 @@
   if (certFilterForm && certFilterInput && certTableBody) {
     let filterTimeout = null;
     const refreshTable = async () => {
-      const params = new URLSearchParams({ q: certFilterInput.value });
-      const response = await window.fetch(`/certs/table?${params.toString()}`);
-      if (!response.ok) {
-        return;
+      try {
+        const params = new URLSearchParams({ q: certFilterInput.value });
+        const response = await window.fetch(`/certs/table?${params.toString()}`);
+        if (!response.ok) {
+          window.console.error(`Unable to refresh certificates table: HTTP ${response.status}`);
+          return;
+        }
+        certTableBody.innerHTML = await response.text();
+      } catch (error) {
+        window.console.error("Unable to refresh certificates table", error);
       }
-      certTableBody.innerHTML = await response.text();
     };
 
     certFilterForm.addEventListener("submit", (event) => {
