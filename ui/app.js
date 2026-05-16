@@ -1,12 +1,28 @@
 (() => {
   const certFilterForm = document.querySelector(".js-cert-filter-form");
   const certFilterInput = document.querySelector(".js-cert-filter-input");
-  if (certFilterForm && certFilterInput) {
+  const certTableBody = document.querySelector(".js-cert-table-body");
+  if (certFilterForm && certFilterInput && certTableBody) {
     let filterTimeout = null;
+    const refreshTable = async () => {
+      const params = new URLSearchParams({ q: certFilterInput.value });
+      const response = await window.fetch(`/certs/table?${params.toString()}`);
+      if (!response.ok) {
+        return;
+      }
+      certTableBody.innerHTML = await response.text();
+    };
+
+    certFilterForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      window.clearTimeout(filterTimeout);
+      void refreshTable();
+    });
+
     certFilterInput.addEventListener("input", () => {
       window.clearTimeout(filterTimeout);
       filterTimeout = window.setTimeout(() => {
-        certFilterForm.submit();
+        void refreshTable();
       }, 300);
     });
   }
@@ -18,13 +34,14 @@
     });
   }
 
-  const deleteForms = document.querySelectorAll(".js-delete-cert-form");
-  deleteForms.forEach((form) => {
-    form.addEventListener("submit", (event) => {
-      const confirmText = form.getAttribute("data-confirm-text");
-      if (confirmText && !window.confirm(confirmText)) {
-        event.preventDefault();
-      }
-    });
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.classList.contains("js-delete-cert-form")) {
+      return;
+    }
+    const confirmText = form.getAttribute("data-confirm-text");
+    if (confirmText && !window.confirm(confirmText)) {
+      event.preventDefault();
+    }
   });
 })();

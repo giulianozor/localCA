@@ -1,0 +1,22 @@
+{{range .Certificates}}
+  <tr>
+    <td>{{.ID}}</td>
+    <td>{{.CommonName}}</td>
+    <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
+    <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
+    <td>
+      <a href="/download?kind=cert-pem&id={{.ID}}">cert PEM</a> ·
+      <a href="/download?kind=cert-der&id={{.ID}}">cert DER</a> ·
+      <a href="/download?kind=chain-pem&id={{.ID}}">chain PEM</a> ·
+      <a href="/download?kind=key-pem&id={{.ID}}">key PEM</a> ·
+      <a href="/download?kind=key-pkcs8-pem&id={{.ID}}">key PKCS8 PEM</a> ·
+      <a href="/download?kind=key-der&id={{.ID}}">key DER</a> ·
+      <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button class="danger" type="submit">{{index $.T "cert.list.delete"}}</button>
+      </form>
+    </td>
+  </tr>
+{{else}}
+  <tr><td colspan="5" class="muted">{{index .T "cert.list.none"}}</td></tr>
+{{end}}

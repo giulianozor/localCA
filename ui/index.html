@@ -67,7 +67,7 @@
         </form>
         <table>
           <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
-          <tbody>
+          <tbody class="js-cert-table-body">
             {{range .Certificates}}
               <tr>
                 <td>{{.ID}}</td>

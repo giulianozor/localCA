@@ -90,6 +90,7 @@ func main() {
 	mux.HandleFunc("/ca/create", a.handleCreateCA)
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
 	mux.HandleFunc("/certs/delete", a.handleDeleteCert)
+	mux.HandleFunc("/certs/table", a.handleCertTable)
 	mux.HandleFunc("/download", a.handleDownload)
 	mux.HandleFunc("/static/styles.css", handleStyles)
 	mux.HandleFunc("/static/app.js", handleAppJS)
@@ -113,7 +114,7 @@ func parseArgs(args []string) (string, int, string, error) {
 		return "", 0, "", errors.New("invalid port: use a value between 1 and 65535")
 	}
 	if !isSupportedLanguage(*lang) {
-		return "", 0, "", errors.New("invalid language: use en or it")
+		return "", 0, "", errors.New("invalid language: use en, it or ja")
 	}
 	remaining := fs.Args()
 	if len(remaining) != 1 {
@@ -244,6 +245,38 @@ func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg st
 	tmpl := template.Must(template.New("index").Parse(indexHTML))
 	if err := tmpl.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (a *app) handleCertTable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, hasCA, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, hasCA)
+	certs, err := a.listCerts()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sort.Slice(certs, func(i, j int) bool {
+		return certs[i].CreatedAt.After(certs[j].CreatedAt)
+	})
+	certs = filterCertificates(certs, r.URL.Query().Get("q"))
+	data := pageData{
+		Certificates: certs,
+		T:            a.translations[lang],
+	}
+	tmpl := template.Must(template.New("cert-table-rows").Parse(certTableRowsHTML))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tmpl.Execute(w, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -730,3 +763,6 @@ var stylesCSS string
 
 //go:embed ui/app.js
 var appJS string
+
+//go:embed ui/cert_table_rows.html
+var certTableRowsHTML string
