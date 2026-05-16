@@ -15,6 +15,7 @@
         <select id="lang-select" class="js-lang-select" name="lang">
           <option value="en" {{if eq .Lang "en"}}selected{{end}}>{{index .T "language.en"}}</option>
           <option value="it" {{if eq .Lang "it"}}selected{{end}}>{{index .T "language.it"}}</option>
+          <option value="ja" {{if eq .Lang "ja"}}selected{{end}}>{{index .T "language.ja"}}</option>
         </select>
       </form>
     </div>
@@ -61,8 +62,8 @@
 
       <div class="card">
         <h2>{{index .T "cert.list.title"}}</h2>
-        <form method="get" action="/">
-          <label>{{index .T "cert.list.filter_label"}}<input name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}"></label>
+        <form class="js-cert-filter-form" method="get" action="/">
+          <label>{{index .T "cert.list.filter_label"}}<input class="js-cert-filter-input" name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}"></label>
         </form>
         <table>
           <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>

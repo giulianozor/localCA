@@ -4,6 +4,7 @@
   "language.label": "Select language",
   "language.en": "English",
   "language.it": "Italian",
+  "language.ja": "Japanese",
   "language.button": "Save language",
   "ca.create.title": "Create local Certificate Authority",
   "ca.create.validity": "CA validity is automatically set to %d years.",

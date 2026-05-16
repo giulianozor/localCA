@@ -1,4 +1,16 @@
 (() => {
+  const certFilterForm = document.querySelector(".js-cert-filter-form");
+  const certFilterInput = document.querySelector(".js-cert-filter-input");
+  if (certFilterForm && certFilterInput) {
+    let filterTimeout;
+    certFilterInput.addEventListener("input", () => {
+      window.clearTimeout(filterTimeout);
+      filterTimeout = window.setTimeout(() => {
+        certFilterForm.submit();
+      }, 300);
+    });
+  }
+
   const langSelect = document.querySelector(".js-lang-select");
   if (langSelect && langSelect.form) {
     langSelect.addEventListener("change", () => {

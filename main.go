@@ -73,7 +73,7 @@ type pageData struct {
 func main() {
 	dataDir, port, lang, err := parseArgs(os.Args[1:])
 	if err != nil {
-		log.Fatalf("usage: %s [-port 8080] [-lang en|it] <data-directory>: %v", os.Args[0], err)
+		log.Fatalf("usage: %s [-port 8080] [-lang en|it|ja] <data-directory>: %v", os.Args[0], err)
 	}
 	if err := os.MkdirAll(filepath.Join(dataDir, "certs"), 0o750); err != nil {
 		log.Fatalf("unable to create data directory: %v", err)
@@ -96,7 +96,6 @@ func main() {
 
 	addr := fmt.Sprintf(":%d", port)
 	log.Printf("localCA UI available on all interfaces (port %d), access via http://<host-ip-or-hostname>:%d", port, port)
-	log.Printf("WARNING: server is reachable from network interfaces; use only in trusted networks or restrict access with firewall rules")
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
@@ -106,7 +105,7 @@ func parseArgs(args []string) (string, int, string, error) {
 	fs := flag.NewFlagSet("localCA", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	port := fs.Int("port", 8080, "porta HTTP del server web")
-	lang := fs.String("lang", defaultLanguage, "lingua UI (en|it)")
+	lang := fs.String("lang", defaultLanguage, "lingua UI (en|it|ja)")
 	if err := fs.Parse(args); err != nil {
 		return "", 0, "", err
 	}
@@ -125,7 +124,7 @@ func parseArgs(args []string) (string, int, string, error) {
 
 func loadTranslations() (map[string]map[string]string, error) {
 	result := map[string]map[string]string{}
-	for _, lang := range []string{"it", "en"} {
+	for _, lang := range []string{"it", "en", "ja"} {
 		path := filepath.Join("i18n", lang+".json")
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -142,7 +141,7 @@ func loadTranslations() (map[string]map[string]string, error) {
 
 func isSupportedLanguage(lang string) bool {
 	switch lang {
-	case "en", "it":
+	case "en", "it", "ja":
 		return true
 	default:
 		return false
