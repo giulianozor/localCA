@@ -1,1 +1,30 @@
 # localCA
+
+Applicazione Go con interfaccia web (tema scuro) per gestire una Certificate Authority locale e certificati server locali.
+
+## Avvio
+
+```bash
+go run . /percorso/dati
+```
+
+L'unico parametro da riga di comando è il percorso dove salvare dati e configurazione.
+L'applicazione espone la UI su `http://localhost:8080`.
+
+## Funzionalità
+
+- Creazione CA locale con validità fissa a **100 anni**
+- Creazione certificati server con SAN DNS/IP (`FQDN`, IP, host `.local` o `.locsl`), validità selezionabile da **1 a 30 anni**
+- Esportazione via web in formati diffusi:
+  - Certificati: PEM, DER, chain PEM
+  - Chiavi private: PEM (PKCS#1), PEM (PKCS#8), DER
+- Configurazione (`config.json`) creata alla creazione della CA e salvata nella cartella dati
+
+## Struttura dati
+
+Nella cartella passata da CLI vengono creati:
+
+- `config.json`
+- `ca-cert.pem`, `ca-cert.der`
+- `ca-key.pem`, `ca-key-pkcs8.pem`, `ca-key.der`
+- `certs/<id>/...` per ogni certificato emesso
