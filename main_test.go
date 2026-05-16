@@ -3,7 +3,9 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"time"
 )
 
 func TestParseValidityYears(t *testing.T) {
@@ -113,6 +115,34 @@ func TestParseArgs(t *testing.T) {
 	t.Run("invalid language", func(t *testing.T) {
 		if _, _, _, err := parseArgs([]string{"-lang", "fr", "/tmp/data"}); err == nil {
 			t.Fatal("parseArgs() expected error")
+		}
+	})
+}
+
+func TestFilterCertificates(t *testing.T) {
+	certs := []certMetadata{
+		{ID: "cert-1", CommonName: "dev.local", SANs: []string{"dev.local", "127.0.0.1"}, CreatedAt: time.Now()},
+		{ID: "cert-2", CommonName: "api.locsl", SANs: []string{"api.locsl"}, CreatedAt: time.Now()},
+	}
+
+	t.Run("empty query returns all", func(t *testing.T) {
+		got := filterCertificates(certs, "")
+		if !reflect.DeepEqual(got, certs) {
+			t.Fatalf("filterCertificates() = %#v, want %#v", got, certs)
+		}
+	})
+
+	t.Run("filter by common name", func(t *testing.T) {
+		got := filterCertificates(certs, "api")
+		if len(got) != 1 || got[0].ID != "cert-2" {
+			t.Fatalf("filterCertificates() got %#v, want cert-2 only", got)
+		}
+	})
+
+	t.Run("filter by SAN case insensitive", func(t *testing.T) {
+		got := filterCertificates(certs, "DEV.LOCAL")
+		if len(got) != 1 || got[0].ID != "cert-1" {
+			t.Fatalf("filterCertificates() got %#v, want cert-1 only", got)
 		}
 	})
 }

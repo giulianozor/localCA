@@ -60,6 +60,7 @@ type pageData struct {
 	CAYears          int
 	Config           config
 	Certificates     []certMetadata
+	CertFilter       string
 	Message          string
 	Error            string
 	DefaultCertYears int
@@ -87,6 +88,7 @@ func main() {
 	mux.HandleFunc("/lang", a.handleSetLanguage)
 	mux.HandleFunc("/ca/create", a.handleCreateCA)
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
+	mux.HandleFunc("/certs/delete", a.handleDeleteCert)
 	mux.HandleFunc("/download", a.handleDownload)
 
 	addr := fmt.Sprintf(":%d", port)
@@ -173,7 +175,7 @@ func (a *app) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	a.renderIndex(w, r.URL.Query().Get("msg"), r.URL.Query().Get("err"))
+	a.renderIndex(w, r, r.URL.Query().Get("msg"), r.URL.Query().Get("err"))
 }
 
 func (a *app) handleSetLanguage(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +205,7 @@ func (a *app) handleSetLanguage(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.language_updated")), http.StatusSeeOther)
 }
 
-func (a *app) renderIndex(w http.ResponseWriter, msg, errMsg string) {
+func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
 	cfg, hasCA, err := a.loadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -219,6 +221,8 @@ func (a *app) renderIndex(w http.ResponseWriter, msg, errMsg string) {
 	sort.Slice(certs, func(i, j int) bool {
 		return certs[i].CreatedAt.After(certs[j].CreatedAt)
 	})
+	filter := strings.TrimSpace(r.URL.Query().Get("q"))
+	certs = filterCertificates(certs, filter)
 	lang := a.currentLanguage(cfg, hasCA)
 
 	data := pageData{
@@ -226,6 +230,7 @@ func (a *app) renderIndex(w http.ResponseWriter, msg, errMsg string) {
 		CAYears:          caYears,
 		Config:           cfg,
 		Certificates:     certs,
+		CertFilter:       filter,
 		Message:          msg,
 		Error:            errMsg,
 		DefaultCertYears: 1,
@@ -317,6 +322,36 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.cert_created")), http.StatusSeeOther)
+}
+
+func (a *app) handleDeleteCert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+
+	id := strings.TrimSpace(r.FormValue("id"))
+	path, safeID, err := a.resolveCertificateDir(id)
+	if err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
+		return
+	}
+	if err := os.RemoveAll(path); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_deleted"), safeID)), http.StatusSeeOther)
 }
 
 func (a *app) handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +466,22 @@ func parseSANs(input string) ([]string, error) {
 		return nil, errors.New("inserire almeno un SAN (FQDN, IP o host .local/.locsl)")
 	}
 	return result, nil
+}
+
+func filterCertificates(certs []certMetadata, query string) []certMetadata {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return certs
+	}
+	filtered := make([]certMetadata, 0, len(certs))
+	for _, cert := range certs {
+		if strings.Contains(strings.ToLower(cert.ID), query) ||
+			strings.Contains(strings.ToLower(cert.CommonName), query) ||
+			strings.Contains(strings.ToLower(strings.Join(cert.SANs, ",")), query) {
+			filtered = append(filtered, cert)
+		}
+	}
+	return filtered
 }
 
 func (a *app) createCA(cn, org, country string) error {
@@ -676,6 +727,8 @@ const indexHTML = `<!doctype html>
     .lang-form { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
     .lang-form label { margin-top: 0; white-space: nowrap; }
     .lang-form select { width: auto; min-width: 110px; margin-top: 0; padding: 6px 8px; }
+    .inline-form { display: inline; }
+    .danger { background: #b91c1c; margin-top: 0; padding: 6px 10px; }
   </style>
 </head>
 <body>
@@ -732,6 +785,9 @@ const indexHTML = `<!doctype html>
 
       <div class="card">
         <h2>{{index .T "cert.list.title"}}</h2>
+        <form method="get" action="/">
+          <label>{{index .T "cert.list.filter_label"}}<input name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}"></label>
+        </form>
         <table>
           <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
           <tbody>
@@ -747,7 +803,11 @@ const indexHTML = `<!doctype html>
                   <a href="/download?kind=chain-pem&id={{.ID}}">chain PEM</a> ·
                   <a href="/download?kind=key-pem&id={{.ID}}">key PEM</a> ·
                   <a href="/download?kind=key-pkcs8-pem&id={{.ID}}">key PKCS8 PEM</a> ·
-                  <a href="/download?kind=key-der&id={{.ID}}">key DER</a>
+                  <a href="/download?kind=key-der&id={{.ID}}">key DER</a> ·
+                  <form class="inline-form" method="post" action="/certs/delete" onsubmit="return confirm('{{js (index $.T "cert.delete.confirm")}}');">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <button class="danger" type="submit">{{index $.T "cert.list.delete"}}</button>
+                  </form>
                 </td>
               </tr>
             {{else}}
