@@ -126,6 +126,7 @@ func main() {
 	mux.HandleFunc("/certs/renew", a.handleRenewCert)
 	mux.HandleFunc("/certs/delete", a.handleDeleteCert)
 	mux.HandleFunc("/certs/table", a.handleCertTable)
+	mux.HandleFunc("/certs/crl/generate", a.handleGenerateCRL)
 	mux.HandleFunc("/download", a.handleDownload)
 	mux.HandleFunc("/static/styles.css", handleStyles)
 	mux.HandleFunc("/static/app.js", handleAppJS)
@@ -625,6 +626,110 @@ func (a *app) handleRevokeCert(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_revoked"), safeID)), http.StatusSeeOther)
 }
 
+func (a *app) generateCRL(signerPassphrase string) error {
+	signerCertPath := filepath.Join(a.dataDir, "ca-cert.pem")
+	signerKeyPath := filepath.Join(a.dataDir, "ca-key.pem")
+	missingErr := "CA passphrase required"
+	invalidErr := "invalid CA passphrase"
+	if a.hasIntermediate() {
+		signerCertPath = filepath.Join(a.dataDir, "intermediate-cert.pem")
+		signerKeyPath = filepath.Join(a.dataDir, "intermediate-key.pem")
+		missingErr = "intermediate passphrase required"
+		invalidErr = "invalid intermediate passphrase"
+	}
+	signerCertPEM, err := os.ReadFile(signerCertPath)
+	if err != nil {
+		return errors.New("signer certificate not found")
+	}
+	signerBlock, _ := pem.Decode(signerCertPEM)
+	if signerBlock == nil {
+		return errors.New("invalid signer certificate")
+	}
+	signerCert, err := x509.ParseCertificate(signerBlock.Bytes)
+	if err != nil {
+		return err
+	}
+	signerKeyPEM, err := os.ReadFile(signerKeyPath)
+	if err != nil {
+		return errors.New("signer key not found")
+	}
+	signerKey, err := parsePrivateKeyPEM(signerKeyPEM, signerPassphrase, missingErr, invalidErr)
+	if err != nil {
+		return err
+	}
+
+	certs, err := a.listCerts()
+	if err != nil {
+		return err
+	}
+	var revokedCerts []x509.RevocationListEntry
+	for _, meta := range certs {
+		if meta.RevokedAt == nil {
+			continue
+		}
+		certDir := filepath.Join(a.dataDir, "certs", meta.ID)
+		certPEM, err := os.ReadFile(filepath.Join(certDir, "cert.pem"))
+		if err != nil {
+			continue
+		}
+		block, _ := pem.Decode(certPEM)
+		if block == nil {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			continue
+		}
+		revokedCerts = append(revokedCerts, x509.RevocationListEntry{
+			SerialNumber:   cert.SerialNumber,
+			RevocationTime: *meta.RevokedAt,
+		})
+	}
+
+	now := time.Now()
+	tmpl := &x509.RevocationList{
+		Number:              big.NewInt(now.UnixNano()),
+		ThisUpdate:          now,
+		NextUpdate:          now.AddDate(0, 0, 7),
+		RevokedCertificateEntries: revokedCerts,
+	}
+	crlDER, err := x509.CreateRevocationList(rand.Reader, tmpl, signerCert, signerKey)
+	if err != nil {
+		return err
+	}
+	if err := writePEM(filepath.Join(a.dataDir, "crl.pem"), "X509 CRL", crlDER, 0o640); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(a.dataDir, "crl.der"), crlDER, 0o640)
+}
+
+func (a *app) handleGenerateCRL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
+	if cfg.signerPassphraseRequired() && signerPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+		return
+	}
+	if err := a.generateCRL(signerPassphrase); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.crl_generated")), http.StatusSeeOther)
+}
+
 func (a *app) handleRenewCert(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -722,6 +827,10 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 		return filepath.Join(a.dataDir, "intermediate-cert.pem"), "intermediate-cert.pem", "application/x-pem-file", nil
 	case "intermediate-chain-pem":
 		return filepath.Join(a.dataDir, "intermediate-chain.pem"), "intermediate-chain.pem", "application/x-pem-file", nil
+	case "crl-pem":
+		return filepath.Join(a.dataDir, "crl.pem"), "crl.pem", "application/x-pem-file", nil
+	case "crl-der":
+		return filepath.Join(a.dataDir, "crl.der"), "crl.der", "application/pkix-crl", nil
 	case "csr-pem":
 		base, safeID, err := a.resolveCertificateDir(id)
 		if err != nil {

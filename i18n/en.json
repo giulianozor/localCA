@@ -85,5 +85,8 @@
   "msg.cert_deleted": "Certificate %s deleted successfully",
   "msg.invalid_language": "Invalid language",
   "msg.create_ca_before_language_change": "Create the CA first to persist language",
-  "msg.language_updated": "Language updated successfully"
+  "msg.language_updated": "Language updated successfully",
+  "msg.crl_generated": "CRL generated successfully",
+  "crl.generate.button": "Generate CRL",
+  "crl.download.label": "Download CRL"
 }

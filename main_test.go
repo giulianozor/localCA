@@ -491,3 +491,117 @@ func assertIPAddresses(t *testing.T, got []net.IP, want []string) {
 		}
 	}
 }
+
+func TestGenerateCRL(t *testing.T) {
+	a, certID := createTestCertificate(t)
+
+	// Revoke the certificate
+	now := time.Now()
+	certDir := filepath.Join(a.dataDir, "certs", certID)
+	meta, err := a.loadCertMetadata(certDir)
+	if err != nil {
+		t.Fatalf("loadCertMetadata() error = %v", err)
+	}
+	meta.RevokedAt = &now
+	if err := a.saveCertMetadata(certDir, meta); err != nil {
+		t.Fatalf("saveCertMetadata() error = %v", err)
+	}
+
+	// Generate CRL
+	if err := a.generateCRL(""); err != nil {
+		t.Fatalf("generateCRL() error = %v", err)
+	}
+
+	// Verify crl.pem exists and is parseable
+	crlPEM, err := os.ReadFile(filepath.Join(a.dataDir, "crl.pem"))
+	if err != nil {
+		t.Fatalf("read crl.pem error = %v", err)
+	}
+	block, _ := pem.Decode(crlPEM)
+	if block == nil {
+		t.Fatal("crl.pem has no PEM block")
+	}
+	crl, err := x509.ParseRevocationList(block.Bytes)
+	if err != nil {
+		t.Fatalf("ParseRevocationList() error = %v", err)
+	}
+	if len(crl.RevokedCertificateEntries) != 1 {
+		t.Fatalf("CRL entries = %d, want 1", len(crl.RevokedCertificateEntries))
+	}
+
+	// Verify crl.der exists
+	crlDER, err := os.ReadFile(filepath.Join(a.dataDir, "crl.der"))
+	if err != nil {
+		t.Fatalf("read crl.der error = %v", err)
+	}
+	if len(crlDER) == 0 {
+		t.Fatal("crl.der is empty")
+	}
+
+	// Verify the serial in the CRL matches the revoked cert
+	certPEM, err := os.ReadFile(filepath.Join(certDir, "cert.pem"))
+	if err != nil {
+		t.Fatalf("read cert.pem error = %v", err)
+	}
+	certBlock, _ := pem.Decode(certPEM)
+	if certBlock == nil {
+		t.Fatal("cert.pem has no PEM block")
+	}
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate() error = %v", err)
+	}
+	if crl.RevokedCertificateEntries[0].SerialNumber.Cmp(cert.SerialNumber) != 0 {
+		t.Fatalf("CRL entry serial = %s, want %s",
+			crl.RevokedCertificateEntries[0].SerialNumber,
+			cert.SerialNumber)
+	}
+}
+
+func TestHandleGenerateCRL(t *testing.T) {
+	translations, err := loadTranslations()
+	if err != nil {
+		t.Fatalf("loadTranslations() error = %v", err)
+	}
+	a, certID := createTestCertificate(t)
+	a.translations = translations
+
+	// Revoke via handler
+	revokeForm := url.Values{}
+	revokeForm.Set("id", certID)
+	revokeReq := httptest.NewRequest(http.MethodPost, "/certs/revoke", strings.NewReader(revokeForm.Encode()))
+	revokeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	revokeRR := httptest.NewRecorder()
+	a.handleRevokeCert(revokeRR, revokeReq)
+	if revokeRR.Code != http.StatusSeeOther {
+		t.Fatalf("handleRevokeCert() status = %d, want %d", revokeRR.Code, http.StatusSeeOther)
+	}
+
+	// Generate CRL via handler
+	genReq := httptest.NewRequest(http.MethodPost, "/certs/crl/generate", strings.NewReader(""))
+	genReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	genRR := httptest.NewRecorder()
+	a.handleGenerateCRL(genRR, genReq)
+	if genRR.Code != http.StatusSeeOther {
+		t.Fatalf("handleGenerateCRL() status = %d, want %d", genRR.Code, http.StatusSeeOther)
+	}
+	if !strings.Contains(genRR.Header().Get("Location"), "msg=") {
+		t.Fatalf("handleGenerateCRL() expected success redirect, got %s", genRR.Header().Get("Location"))
+	}
+
+	// Verify CRL file was created
+	if _, err := os.Stat(filepath.Join(a.dataDir, "crl.pem")); err != nil {
+		t.Fatalf("crl.pem not created: %v", err)
+	}
+
+	// Download CRL via handler
+	dlReq := httptest.NewRequest(http.MethodGet, "/download?kind=crl-pem", nil)
+	dlRR := httptest.NewRecorder()
+	a.handleDownload(dlRR, dlReq)
+	if dlRR.Code != http.StatusOK {
+		t.Fatalf("handleDownload(crl-pem) status = %d, want %d", dlRR.Code, http.StatusOK)
+	}
+	if dlRR.Header().Get("Content-Type") != "application/x-pem-file" {
+		t.Fatalf("handleDownload(crl-pem) Content-Type = %s", dlRR.Header().Get("Content-Type"))
+	}
+}

@@ -85,5 +85,8 @@
   "msg.cert_deleted": "証明書 %s を削除しました",
   "msg.invalid_language": "無効な言語です",
   "msg.create_ca_before_language_change": "言語を保存するには先に CA を作成してください",
-  "msg.language_updated": "言語を更新しました"
+  "msg.language_updated": "言語を更新しました",
+  "msg.crl_generated": "CRL を生成しました",
+  "crl.generate.button": "CRL を生成",
+  "crl.download.label": "CRL をダウンロード"
 }

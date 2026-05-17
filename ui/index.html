@@ -50,6 +50,13 @@
           <button type="submit">{{index .T "ca.passphrase.button"}}</button>
         </form>
         <p>{{index .T "export.label"}}: <a href="/download?kind=ca-cert-pem">CA cert PEM</a> · <a href="/download?kind=ca-cert-der">CA cert DER</a> · <a href="/download?kind=ca-key-pem">CA key PEM</a></p>
+        <form method="post" action="/certs/crl/generate">
+          {{if .SignerPassphraseRequired}}
+            <label>{{index .T "cert.create.signer_passphrase_label"}}<input name="signer_passphrase" type="password"></label>
+          {{end}}
+          <button type="submit">{{index .T "crl.generate.button"}}</button>
+        </form>
+        <p>{{index .T "crl.download.label"}}: <a href="/download?kind=crl-pem">CRL PEM</a> · <a href="/download?kind=crl-der">CRL DER</a></p>
       </div>
       {{if not .HasIntermediate}}
         <div class="card">
