@@ -129,6 +129,33 @@ func TestParseArgs(t *testing.T) {
 	})
 }
 
+func TestLoadTranslationsUsesEmbeddedAssets(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir(%s) error = %v", tempDir, err)
+	}
+	defer func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+
+	translations, err := loadTranslations()
+	if err != nil {
+		t.Fatalf("loadTranslations() error = %v", err)
+	}
+	if got := translations["en"]["language.label"]; got != "Select language" {
+		t.Fatalf("translations[en][language.label] = %q, want %q", got, "Select language")
+	}
+	if got := translations["ja"]["cert.create.button"]; got != "証明書を作成" {
+		t.Fatalf("translations[ja][cert.create.button] = %q, want %q", got, "証明書を作成")
+	}
+}
+
 func TestFilterCertificates(t *testing.T) {
 	certs := []certMetadata{
 		{ID: "cert-1", CommonName: "dev.local", SANs: []string{"dev.local", "127.0.0.1"}, CreatedAt: time.Now()},

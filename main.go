@@ -8,7 +8,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	_ "embed"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -130,7 +130,7 @@ func loadTranslations() (map[string]map[string]string, error) {
 	result := map[string]map[string]string{}
 	for _, lang := range []string{"it", "en", "ja"} {
 		path := filepath.Join("i18n", lang+".json")
-		b, err := os.ReadFile(path)
+		b, err := embeddedI18n.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
@@ -865,5 +865,8 @@ var appJS string
 
 //go:embed ui/cert_table_rows.html
 var certTableRowsHTML string
+
+//go:embed i18n/*.json
+var embeddedI18n embed.FS
 
 var certTableRowsTemplate = template.Must(template.New("cert-table-rows").Parse(certTableRowsHTML))
