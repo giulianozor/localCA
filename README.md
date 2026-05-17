@@ -25,11 +25,11 @@ The application listens on all network interfaces and exposes the UI at `http://
 
 ## Features
 
-- Local CA creation with fixed **100-year** validity
+- Local CA creation with fixed **100-year** validity (optional private-key passphrase)
+- Optional intermediate CA creation (used to sign newly issued certificates)
 - Server certificate creation with DNS/IP SANs (`FQDN`, IP, `.local`) and selectable validity from **1 to 30 years**
-- Web export in common formats:
-  - Certificates: CSR PEM, PEM, DER, chain PEM, per-certificate `tar.gz`
-  - Private keys: PEM (PKCS#1), PEM (PKCS#8), DER
+- Server certificate key passphrase support and signer passphrase prompt when CA/intermediate keys are protected
+- Per-certificate export as `tar.gz` only, with optional export passphrase
 - UI language selector (English/Italian/Japanese) with preference persisted in `config.json`
 - UI translations are embedded in the binary (no runtime `i18n/*.json` files required)
 - Issued certificate filtering by ID/CN/SAN with debounced updates (300 ms) and table-only refresh (no full page reload)
@@ -40,5 +40,6 @@ The provided data directory contains:
 
 - `config.json`
 - `ca-cert.pem`, `ca-cert.der`
-- `ca-key.pem`, `ca-key-pkcs8.pem`, `ca-key.der`
-- `certs/<id>/...` for each issued certificate, including CSR/certificate/key material and metadata
+- `ca-key.pem`
+- `intermediate-cert.pem`, `intermediate-key.pem`, `intermediate-chain.pem` (if created)
+- `certs/<id>/...` for each issued certificate, including CSR (`csr.pem`), certificate (`cert.pem`), private key (`key.pem`) and metadata

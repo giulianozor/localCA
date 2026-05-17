@@ -33,6 +33,7 @@
           <label>{{index .T "ca.create.cn_label"}}<input name="ca_common_name" placeholder="{{index .T "ca.create.cn_placeholder"}}"></label>
           <label>{{index .T "ca.create.org_label"}}<input name="organization" placeholder="{{index .T "ca.create.org_placeholder"}}"></label>
           <label>{{index .T "ca.create.country_label"}}<input name="country" placeholder="{{index .T "ca.create.country_placeholder"}}"></label>
+          <label>{{index .T "ca.create.passphrase_label"}}<input name="ca_passphrase" type="password" placeholder="{{index .T "ca.create.passphrase_placeholder"}}"></label>
           <button type="submit">{{index .T "ca.create.button"}}</button>
         </form>
       </div>
@@ -43,8 +44,33 @@
            <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.Organization}}<br>
            <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.Country}}<br>
            <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.CAValidityYears}}</p>
-        <p>{{index .T "export.label"}}: <a href="/download?kind=ca-cert-pem">CA cert PEM</a> · <a href="/download?kind=ca-cert-der">CA cert DER</a> · <a href="/download?kind=ca-key-pem">CA key PEM</a> · <a href="/download?kind=ca-key-pkcs8-pem">CA key PKCS8 PEM</a> · <a href="/download?kind=ca-key-der">CA key DER</a></p>
+        <p>{{index .T "export.label"}}: <a href="/download?kind=ca-cert-pem">CA cert PEM</a> · <a href="/download?kind=ca-cert-der">CA cert DER</a> · <a href="/download?kind=ca-key-pem">CA key PEM</a></p>
       </div>
+      {{if not .HasIntermediate}}
+        <div class="card">
+          <h2>{{index .T "intermediate.create.title"}}</h2>
+          <p class="muted">{{printf (index .T "intermediate.create.validity") .CAYears}}</p>
+          <form method="post" action="/intermediate/create">
+            <label>{{index .T "intermediate.create.cn_label"}}<input name="intermediate_common_name" placeholder="{{index .T "intermediate.create.cn_placeholder"}}"></label>
+            <label>{{index .T "intermediate.create.org_label"}}<input name="intermediate_organization" placeholder="{{.Config.Organization}}"></label>
+            <label>{{index .T "intermediate.create.country_label"}}<input name="intermediate_country" placeholder="{{.Config.Country}}"></label>
+            {{if .Config.CAPassphraseSet}}
+              <label>{{index .T "intermediate.create.ca_passphrase_label"}}<input name="ca_passphrase" type="password"></label>
+            {{end}}
+            <label>{{index .T "intermediate.create.passphrase_label"}}<input name="intermediate_passphrase" type="password" placeholder="{{index .T "intermediate.create.passphrase_placeholder"}}"></label>
+            <button type="submit">{{index .T "intermediate.create.button"}}</button>
+          </form>
+        </div>
+      {{else}}
+        <div class="card">
+          <h2>{{index .T "intermediate.active.title"}}</h2>
+          <p><strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.IntermediateCommonName}}<br>
+             <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.IntermediateOrganization}}<br>
+             <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.IntermediateCountry}}<br>
+             <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.IntermediateValidityYears}}</p>
+          <p>{{index .T "export.label"}}: <a href="/download?kind=intermediate-cert-pem">Intermediate cert PEM</a> · <a href="/download?kind=intermediate-chain-pem">Intermediate chain PEM</a></p>
+        </div>
+      {{end}}
 
       <div class="card">
         <h2>{{index .T "cert.create.title"}}</h2>
@@ -56,6 +82,10 @@
           <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
             <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
           </label>
+          <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
+          {{if .SignerPassphraseRequired}}
+            <label>{{index .T "cert.create.signer_passphrase_label"}}<input name="signer_passphrase" type="password"></label>
+          {{end}}
           <button type="submit">{{index .T "cert.create.button"}}</button>
         </form>
       </div>
@@ -75,14 +105,12 @@
                 <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
                 <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
                 <td>
-                  <a href="/download?kind=csr-pem&id={{.ID}}">CSR PEM</a> ·
-                  <a href="/download?kind=cert-pem&id={{.ID}}">cert PEM</a> ·
-                  <a href="/download?kind=cert-der&id={{.ID}}">cert DER</a> ·
-                  <a href="/download?kind=chain-pem&id={{.ID}}">chain PEM</a> ·
-                  <a href="/download?kind=key-pem&id={{.ID}}">key PEM</a> ·
-                  <a href="/download?kind=key-pkcs8-pem&id={{.ID}}">key PKCS8 PEM</a> ·
-                  <a href="/download?kind=key-der&id={{.ID}}">key DER</a> ·
-                  <a href="/download?kind=all-tar-gz&id={{.ID}}">all tar.gz</a> ·
+                  <form class="inline-form" method="get" action="/download">
+                    <input type="hidden" name="kind" value="all-tar-gz">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <input name="export_passphrase" type="password" placeholder="{{index $.T "cert.list.export_passphrase_placeholder"}}">
+                    <button type="submit">tar.gz</button>
+                  </form>
                   <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
                     <input type="hidden" name="id" value="{{.ID}}">
                     <button class="danger" type="submit">{{index $.T "cert.list.delete"}}</button>

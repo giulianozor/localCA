@@ -267,12 +267,82 @@ func TestHandleDownloadSupportsCSRAndArchive(t *testing.T) {
 			names[header.Name] = true
 		}
 
-		for _, name := range []string{"cert.der", "cert.pem", "chain.pem", "csr.pem", "key.der", "key.pem", "key-pkcs8.pem", "metadata.json"} {
+		for _, name := range []string{"cert.pem", "chain.pem", "csr.pem", "key.pem", "metadata.json", "ca-cert.pem", "issuer-chain.pem"} {
 			if !names[name] {
 				t.Fatalf("archive missing %s; got %#v", name, names)
 			}
 		}
 	})
+}
+
+func TestCreateServerCertUsesIntermediateAsIssuer(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.createIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
+		t.Fatalf("createIntermediateCA() error = %v", err)
+	}
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", ""); err != nil {
+		t.Fatalf("createServerCert() error = %v", err)
+	}
+	certs, err := a.listCerts()
+	if err != nil {
+		t.Fatalf("listCerts() error = %v", err)
+	}
+	if len(certs) != 1 {
+		t.Fatalf("listCerts() len = %d, want 1", len(certs))
+	}
+	cert := parseCertificatePEM(t, filepath.Join(tempDir, "certs", certs[0].ID, "cert.pem"))
+	intermediate := parseCertificatePEM(t, filepath.Join(tempDir, "intermediate-cert.pem"))
+	if cert.Issuer.CommonName != intermediate.Subject.CommonName {
+		t.Fatalf("leaf issuer CN = %q, want %q", cert.Issuer.CommonName, intermediate.Subject.CommonName)
+	}
+}
+
+func TestCreateServerCertRequiresSignerPassphrase(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", "root-pass"); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", ""); err == nil {
+		t.Fatal("createServerCert() expected error when signer passphrase is missing")
+	}
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "root-pass"); err != nil {
+		t.Fatalf("createServerCert() with signer passphrase error = %v", err)
+	}
+}
+
+func TestHandleDownloadArchiveRejectsExportPassphraseForEncryptedKey(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "leaf-pass", ""); err != nil {
+		t.Fatalf("createServerCert() error = %v", err)
+	}
+	certs, err := a.listCerts()
+	if err != nil {
+		t.Fatalf("listCerts() error = %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/download?kind=all-tar-gz&id="+certs[0].ID+"&export_passphrase=export-pass", nil)
+	rr := httptest.NewRecorder()
+	a.handleDownload(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("handleDownload() status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
 }
 
 func createTestCertificate(t *testing.T) (*app, string) {
@@ -283,7 +353,7 @@ func createTestCertificate(t *testing.T) (*app, string) {
 		t.Fatalf("mkdir certs: %v", err)
 	}
 	a := &app{dataDir: tempDir, defaultLang: "en"}
-	if err := a.createCA("Test Root", "localCA", "IT"); err != nil {
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
 		t.Fatalf("createCA() error = %v", err)
 	}
 	if err := a.createServerCert("myserver.example.com", []string{
@@ -292,7 +362,7 @@ func createTestCertificate(t *testing.T) (*app, string) {
 		"192.168.1.100",
 		"10.0.0.50",
 		"127.0.0.1",
-	}, 1); err != nil {
+	}, 1, "", ""); err != nil {
 		t.Fatalf("createServerCert() error = %v", err)
 	}
 	certs, err := a.listCerts()

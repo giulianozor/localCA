@@ -34,6 +34,7 @@ const (
 	caYears             = 100
 	maxCertValidityYear = 30
 	defaultLanguage     = "en"
+	certNotBeforeOffset = -1 * time.Hour
 )
 
 type app struct {
@@ -43,12 +44,19 @@ type app struct {
 }
 
 type config struct {
-	CreatedAt       time.Time `json:"created_at"`
-	CACommonName    string    `json:"ca_common_name"`
-	Organization    string    `json:"organization"`
-	Country         string    `json:"country"`
-	CAValidityYears int       `json:"ca_validity_years"`
-	Language        string    `json:"language"`
+	CreatedAt                 time.Time `json:"created_at"`
+	CACommonName              string    `json:"ca_common_name"`
+	Organization              string    `json:"organization"`
+	Country                   string    `json:"country"`
+	CAValidityYears           int       `json:"ca_validity_years"`
+	Language                  string    `json:"language"`
+	CAPassphraseSet           bool      `json:"ca_passphrase_set,omitempty"`
+	HasIntermediate           bool      `json:"has_intermediate,omitempty"`
+	IntermediateCommonName    string    `json:"intermediate_common_name,omitempty"`
+	IntermediateOrganization  string    `json:"intermediate_organization,omitempty"`
+	IntermediateCountry       string    `json:"intermediate_country,omitempty"`
+	IntermediateValidityYears int       `json:"intermediate_validity_years,omitempty"`
+	IntermediatePassphraseSet bool      `json:"intermediate_passphrase_set,omitempty"`
 }
 
 type certMetadata struct {
@@ -59,18 +67,27 @@ type certMetadata struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+func (c config) signerPassphraseRequired() bool {
+	if c.HasIntermediate {
+		return c.IntermediatePassphraseSet
+	}
+	return c.CAPassphraseSet
+}
+
 type pageData struct {
-	HasCA            bool
-	CAYears          int
-	Config           config
-	Certificates     []certMetadata
-	CertFilter       string
-	Message          string
-	Error            string
-	DefaultCertYears int
-	MaxCertYears     int
-	Lang             string
-	T                map[string]string
+	HasCA                    bool
+	HasIntermediate          bool
+	CAYears                  int
+	Config                   config
+	Certificates             []certMetadata
+	CertFilter               string
+	Message                  string
+	Error                    string
+	DefaultCertYears         int
+	MaxCertYears             int
+	SignerPassphraseRequired bool
+	Lang                     string
+	T                        map[string]string
 }
 
 func main() {
@@ -91,6 +108,7 @@ func main() {
 	mux.HandleFunc("/", a.handleIndex)
 	mux.HandleFunc("/lang", a.handleSetLanguage)
 	mux.HandleFunc("/ca/create", a.handleCreateCA)
+	mux.HandleFunc("/intermediate/create", a.handleCreateIntermediate)
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
 	mux.HandleFunc("/certs/delete", a.handleDeleteCert)
 	mux.HandleFunc("/certs/table", a.handleCertTable)
@@ -232,17 +250,19 @@ func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg st
 	lang := a.currentLanguage(cfg, hasCA)
 
 	data := pageData{
-		HasCA:            hasCA,
-		CAYears:          caYears,
-		Config:           cfg,
-		Certificates:     certs,
-		CertFilter:       filter,
-		Message:          msg,
-		Error:            errMsg,
-		DefaultCertYears: 1,
-		MaxCertYears:     maxCertValidityYear,
-		Lang:             lang,
-		T:                a.translations[lang],
+		HasCA:                    hasCA,
+		HasIntermediate:          hasCA && a.hasIntermediate(),
+		CAYears:                  caYears,
+		Config:                   cfg,
+		Certificates:             certs,
+		CertFilter:               filter,
+		Message:                  msg,
+		Error:                    errMsg,
+		DefaultCertYears:         1,
+		MaxCertYears:             maxCertValidityYear,
+		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(),
+		Lang:                     lang,
+		T:                        a.translations[lang],
 	}
 
 	tmpl := template.Must(template.New("index").Parse(indexHTML))
@@ -311,13 +331,68 @@ func (a *app) handleCreateCA(w http.ResponseWriter, r *http.Request) {
 	if country == "" {
 		country = "IT"
 	}
+	passphrase := strings.TrimSpace(r.FormValue("ca_passphrase"))
 
-	if err := a.createCA(cn, org, country); err != nil {
+	if err := a.createCA(cn, org, country, passphrase); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.ca_created")), http.StatusSeeOther)
+}
+
+func (a *app) handleCreateIntermediate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	if cfg.HasIntermediate && a.hasIntermediate() {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.intermediate_already_exists")), http.StatusSeeOther)
+		return
+	}
+
+	cn := strings.TrimSpace(r.FormValue("intermediate_common_name"))
+	if cn == "" {
+		cn = "localCA Intermediate"
+	}
+	org := strings.TrimSpace(r.FormValue("intermediate_organization"))
+	if org == "" {
+		org = cfg.Organization
+		if org == "" {
+			org = "localCA"
+		}
+	}
+	country := strings.TrimSpace(r.FormValue("intermediate_country"))
+	if country == "" {
+		country = cfg.Country
+		if country == "" {
+			country = "IT"
+		}
+	}
+	caPassphrase := strings.TrimSpace(r.FormValue("ca_passphrase"))
+	if cfg.CAPassphraseSet && caPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
+		return
+	}
+	passphrase := strings.TrimSpace(r.FormValue("intermediate_passphrase"))
+
+	if err := a.createIntermediateCA(cn, org, country, caPassphrase, passphrase); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.intermediate_created")), http.StatusSeeOther)
 }
 
 func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
@@ -352,8 +427,15 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
+	keyPassphrase := strings.TrimSpace(r.FormValue("key_passphrase"))
+	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
+	requiresSignerPassphrase := cfg.signerPassphraseRequired()
+	if requiresSignerPassphrase && signerPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+		return
+	}
 
-	if err := a.createServerCert(commonName, sans, years); err != nil {
+	if err := a.createServerCert(commonName, sans, years, keyPassphrase, signerPassphrase); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -405,7 +487,8 @@ func (a *app) handleDownload(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := writeCertificateArchive(w, path, safeID); err != nil {
+		exportPassphrase := strings.TrimSpace(r.URL.Query().Get("export_passphrase"))
+		if err := writeCertificateArchive(w, path, safeID, a.dataDir, exportPassphrase); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -436,31 +519,16 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 		return filepath.Join(a.dataDir, "ca-cert.der"), "ca-cert.der", "application/pkix-cert", nil
 	case "ca-key-pem":
 		return filepath.Join(a.dataDir, "ca-key.pem"), "ca-key.pem", "application/x-pem-file", nil
-	case "ca-key-pkcs8-pem":
-		return filepath.Join(a.dataDir, "ca-key-pkcs8.pem"), "ca-key-pkcs8.pem", "application/x-pem-file", nil
-	case "ca-key-der":
-		return filepath.Join(a.dataDir, "ca-key.der"), "ca-key.der", "application/octet-stream", nil
-	case "cert-pem", "cert-der", "chain-pem", "csr-pem", "key-pem", "key-pkcs8-pem", "key-der":
+	case "intermediate-cert-pem":
+		return filepath.Join(a.dataDir, "intermediate-cert.pem"), "intermediate-cert.pem", "application/x-pem-file", nil
+	case "intermediate-chain-pem":
+		return filepath.Join(a.dataDir, "intermediate-chain.pem"), "intermediate-chain.pem", "application/x-pem-file", nil
+	case "csr-pem":
 		base, safeID, err := a.resolveCertificateDir(id)
 		if err != nil {
 			return "", "", "", err
 		}
-		switch kind {
-		case "cert-pem":
-			return filepath.Join(base, "cert.pem"), safeID + "-cert.pem", "application/x-pem-file", nil
-		case "cert-der":
-			return filepath.Join(base, "cert.der"), safeID + "-cert.der", "application/pkix-cert", nil
-		case "chain-pem":
-			return filepath.Join(base, "chain.pem"), safeID + "-chain.pem", "application/x-pem-file", nil
-		case "csr-pem":
-			return filepath.Join(base, "csr.pem"), safeID + "-csr.pem", "application/x-pem-file", nil
-		case "key-pem":
-			return filepath.Join(base, "key.pem"), safeID + "-key.pem", "application/x-pem-file", nil
-		case "key-pkcs8-pem":
-			return filepath.Join(base, "key-pkcs8.pem"), safeID + "-key-pkcs8.pem", "application/x-pem-file", nil
-		default:
-			return filepath.Join(base, "key.der"), safeID + "-key.der", "application/octet-stream", nil
-		}
+		return filepath.Join(base, "csr.pem"), safeID + "-csr.pem", "application/x-pem-file", nil
 	default:
 		return "", "", "", errors.New("tipo download non supportato")
 	}
@@ -565,7 +633,78 @@ func filterCertificates(certs []certMetadata, query string) []certMetadata {
 	return filtered
 }
 
-func (a *app) createCA(cn, org, country string) error {
+func (a *app) hasIntermediate() bool {
+	if _, err := os.Stat(filepath.Join(a.dataDir, "intermediate-cert.pem")); err != nil {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(a.dataDir, "intermediate-key.pem")); err != nil {
+		return false
+	}
+	return true
+}
+
+func parsePrivateKeyPEM(keyPEM []byte, passphrase, missingErr, invalidErr string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		return nil, errors.New(invalidErr)
+	}
+	der := block.Bytes
+	if x509.IsEncryptedPEMBlock(block) {
+		if passphrase == "" {
+			return nil, errors.New(missingErr)
+		}
+		var err error
+		der, err = x509.DecryptPEMBlock(block, []byte(passphrase))
+		if err != nil {
+			return nil, errors.New(invalidErr)
+		}
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(der); err == nil {
+		return key, nil
+	}
+	pkcs8Key, err := x509.ParsePKCS8PrivateKey(der)
+	if err != nil {
+		return nil, errors.New(invalidErr)
+	}
+	rsaKey, ok := pkcs8Key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New(invalidErr)
+	}
+	return rsaKey, nil
+}
+
+func parseUnencryptedPrivateKeyPEM(keyPEM []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(keyPEM)
+	if block == nil || x509.IsEncryptedPEMBlock(block) {
+		return nil, errors.New("private key not directly readable")
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	pkcs8Key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	rsaKey, ok := pkcs8Key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("unsupported private key type")
+	}
+	return rsaKey, nil
+}
+
+func encodePrivateKeyPEM(key *rsa.PrivateKey, passphrase string) ([]byte, error) {
+	der := x509.MarshalPKCS1PrivateKey(key)
+	if passphrase == "" {
+		return pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der}), nil
+	}
+	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", der, []byte(passphrase), x509.PEMCipherAES256)
+	if err != nil {
+		return nil, err
+	}
+	return pem.EncodeToMemory(block), nil
+}
+
+func (a *app) createCA(cn, org, country, passphrase string) error {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
 		return err
@@ -579,7 +718,7 @@ func (a *app) createCA(cn, org, country string) error {
 			Organization: []string{org},
 			Country:      []string{country},
 		},
-		NotBefore:             now.Add(-1 * time.Hour),
+		NotBefore:             now.Add(certNotBeforeOffset),
 		NotAfter:              now.AddDate(caYears, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
@@ -597,17 +736,11 @@ func (a *app) createCA(cn, org, country string) error {
 	if err := os.WriteFile(filepath.Join(a.dataDir, "ca-cert.der"), der, 0o640); err != nil {
 		return err
 	}
-	if err := writePEM(filepath.Join(a.dataDir, "ca-key.pem"), "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(privateKey), 0o600); err != nil {
-		return err
-	}
-	pkcs8Bytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	keyPEM, err := encodePrivateKeyPEM(privateKey, passphrase)
 	if err != nil {
 		return err
 	}
-	if err := writePEM(filepath.Join(a.dataDir, "ca-key-pkcs8.pem"), "PRIVATE KEY", pkcs8Bytes, 0o600); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(a.dataDir, "ca-key.der"), x509.MarshalPKCS1PrivateKey(privateKey), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(a.dataDir, "ca-key.pem"), keyPEM, 0o600); err != nil {
 		return err
 	}
 
@@ -618,11 +751,12 @@ func (a *app) createCA(cn, org, country string) error {
 		Country:         country,
 		CAValidityYears: caYears,
 		Language:        a.defaultLang,
+		CAPassphraseSet: passphrase != "",
 	}
 	return a.saveConfig(cfg)
 }
 
-func (a *app) createServerCert(commonName string, sans []string, years int) error {
+func (a *app) createIntermediateCA(cn, org, country, caPassphrase, passphrase string) error {
 	caCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
 	if err != nil {
 		return errors.New("ca non trovata")
@@ -635,16 +769,104 @@ func (a *app) createServerCert(commonName string, sans []string, years int) erro
 	if err != nil {
 		return err
 	}
-
 	caKeyPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-key.pem"))
 	if err != nil {
 		return errors.New("chiave CA non trovata")
 	}
-	caKeyBlock, _ := pem.Decode(caKeyPEM)
-	if caKeyBlock == nil {
-		return errors.New("ca-key.pem non valido")
+	caKey, err := parsePrivateKeyPEM(caKeyPEM, caPassphrase, "passphrase CA richiesta", "passphrase CA non valida")
+	if err != nil {
+		return err
 	}
-	caKey, err := x509.ParsePKCS1PrivateKey(caKeyBlock.Bytes)
+
+	key, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(now.UnixNano()),
+		Subject: pkix.Name{
+			CommonName:   cn,
+			Organization: []string{org},
+			Country:      []string{country},
+		},
+		NotBefore:             now.Add(certNotBeforeOffset),
+		NotAfter:              now.AddDate(caYears, 0, 0),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            0,
+		MaxPathLenZero:        true,
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &key.PublicKey, caKey)
+	if err != nil {
+		return err
+	}
+	if err := writePEM(filepath.Join(a.dataDir, "intermediate-cert.pem"), "CERTIFICATE", certDER, 0o640); err != nil {
+		return err
+	}
+	keyPEM, err := encodePrivateKeyPEM(key, passphrase)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(a.dataDir, "intermediate-key.pem"), keyPEM, 0o600); err != nil {
+		return err
+	}
+	chain := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	chain = append(chain, caCertPEM...)
+	if err := os.WriteFile(filepath.Join(a.dataDir, "intermediate-chain.pem"), chain, 0o640); err != nil {
+		return err
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	if !has {
+		return errors.New("configurazione CA non trovata")
+	}
+	cfg.HasIntermediate = true
+	cfg.IntermediateCommonName = cn
+	cfg.IntermediateOrganization = org
+	cfg.IntermediateCountry = country
+	cfg.IntermediateValidityYears = caYears
+	cfg.IntermediatePassphraseSet = passphrase != ""
+	return a.saveConfig(cfg)
+}
+
+func (a *app) createServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string) error {
+	signerCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
+	if err != nil {
+		return errors.New("ca non trovata")
+	}
+	signerName := "CA"
+	signerKeyPath := filepath.Join(a.dataDir, "ca-key.pem")
+	if a.hasIntermediate() {
+		signerCertPEM, err = os.ReadFile(filepath.Join(a.dataDir, "intermediate-cert.pem"))
+		if err != nil {
+			return errors.New("intermediate-cert.pem non trovato")
+		}
+		signerName = "intermedia"
+		signerKeyPath = filepath.Join(a.dataDir, "intermediate-key.pem")
+	}
+	signerBlock, _ := pem.Decode(signerCertPEM)
+	if signerBlock == nil {
+		return fmt.Errorf("certificato %s non valido", signerName)
+	}
+	signerCert, err := x509.ParseCertificate(signerBlock.Bytes)
+	if err != nil {
+		return err
+	}
+
+	signerKeyPEM, err := os.ReadFile(signerKeyPath)
+	if err != nil {
+		return fmt.Errorf("chiave %s non trovata", signerName)
+	}
+	signerKey, err := parsePrivateKeyPEM(
+		signerKeyPEM,
+		signerPassphrase,
+		fmt.Sprintf("passphrase %s richiesta", signerName),
+		fmt.Sprintf("passphrase %s non valida", signerName),
+	)
 	if err != nil {
 		return err
 	}
@@ -661,7 +883,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int) erro
 		Subject: pkix.Name{
 			CommonName: commonName,
 		},
-		NotBefore:   now.Add(-1 * time.Hour),
+		NotBefore:   now.Add(certNotBeforeOffset),
 		NotAfter:    now.AddDate(years, 0, 0),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
@@ -679,7 +901,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int) erro
 		return err
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &key.PublicKey, caKey)
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, signerCert, &key.PublicKey, signerKey)
 	if err != nil {
 		return err
 	}
@@ -696,25 +918,11 @@ func (a *app) createServerCert(commonName string, sans []string, years int) erro
 	if err := writePEM(filepath.Join(certDir, "cert.pem"), "CERTIFICATE", certDER, 0o640); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(certDir, "cert.der"), certDER, 0o640); err != nil {
-		return err
-	}
-	if err := writePEM(filepath.Join(certDir, "key.pem"), "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key), 0o600); err != nil {
-		return err
-	}
-	keyPKCS8, err := x509.MarshalPKCS8PrivateKey(key)
+	keyPEM, err := encodePrivateKeyPEM(key, keyPassphrase)
 	if err != nil {
 		return err
 	}
-	if err := writePEM(filepath.Join(certDir, "key-pkcs8.pem"), "PRIVATE KEY", keyPKCS8, 0o600); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(certDir, "key.der"), x509.MarshalPKCS1PrivateKey(key), 0o600); err != nil {
-		return err
-	}
-	chainPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	chainPEM = append(chainPEM, caCertPEM...)
-	if err := os.WriteFile(filepath.Join(certDir, "chain.pem"), chainPEM, 0o640); err != nil {
+	if err := os.WriteFile(filepath.Join(certDir, "key.pem"), keyPEM, 0o600); err != nil {
 		return err
 	}
 
@@ -792,35 +1000,82 @@ func writePEM(path, pemType string, der []byte, perm os.FileMode) error {
 	return os.WriteFile(path, b, perm)
 }
 
-func writeCertificateArchive(w http.ResponseWriter, certDir, safeID string) error {
-	entries, err := os.ReadDir(certDir)
+func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, exportPassphrase string) error {
+	certPEM, err := os.ReadFile(filepath.Join(certDir, "cert.pem"))
 	if err != nil {
 		return err
 	}
-
+	csrPEM, err := os.ReadFile(filepath.Join(certDir, "csr.pem"))
+	if err != nil {
+		return err
+	}
+	keyPEM, err := os.ReadFile(filepath.Join(certDir, "key.pem"))
+	if err != nil {
+		return err
+	}
+	metadataJSON, err := os.ReadFile(filepath.Join(certDir, "metadata.json"))
+	if err != nil {
+		return err
+	}
+	caCertPEM, err := os.ReadFile(filepath.Join(dataDir, "ca-cert.pem"))
+	if err != nil {
+		return err
+	}
+	intermediateCertPEM, err := os.ReadFile(filepath.Join(dataDir, "intermediate-cert.pem"))
+	hasIntermediate := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	var archive bytes.Buffer
 	gzipWriter := gzip.NewWriter(&archive)
 	tarWriter := tar.NewWriter(gzipWriter)
+	files := map[string][]byte{
+		"cert.pem":      certPEM,
+		"csr.pem":       csrPEM,
+		"metadata.json": metadataJSON,
+		"ca-cert.pem":   caCertPEM,
+	}
+	if exportPassphrase != "" {
+		if key, parseErr := parseUnencryptedPrivateKeyPEM(keyPEM); parseErr == nil {
+			encryptedKeyPEM, encodeErr := encodePrivateKeyPEM(key, exportPassphrase)
+			if encodeErr != nil {
+				return encodeErr
+			}
+			files["key.pem"] = encryptedKeyPEM
+		} else {
+			return errors.New("export passphrase can only be used with unencrypted certificate keys")
+		}
+	} else {
+		files["key.pem"] = keyPEM
+	}
+	keyFiles := map[string]struct{}{
+		"key.pem": {},
+	}
+	if hasIntermediate {
+		files["intermediate-cert.pem"] = intermediateCertPEM
+		issuerChain := append([]byte(nil), intermediateCertPEM...)
+		issuerChain = append(issuerChain, caCertPEM...)
+		files["issuer-chain.pem"] = issuerChain
+	} else {
+		files["issuer-chain.pem"] = append([]byte(nil), caCertPEM...)
+	}
+	certChain := append([]byte(nil), certPEM...)
+	certChain = append(certChain, files["issuer-chain.pem"]...)
+	files["chain.pem"] = certChain
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+	for name, content := range files {
+		header := &tar.Header{
+			Name: name,
+			Mode: 0o640,
+			Size: int64(len(content)),
 		}
-		path := filepath.Join(certDir, entry.Name())
-		info, err := entry.Info()
-		if err != nil {
-			return err
+		if _, ok := keyFiles[name]; ok {
+			header.Mode = 0o600
 		}
-		header, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
-		header.Name = entry.Name()
 		if err := tarWriter.WriteHeader(header); err != nil {
 			return err
 		}
-
-		if err := addFileToTar(tarWriter, path); err != nil {
+		if _, err := tarWriter.Write(content); err != nil {
 			return err
 		}
 	}
