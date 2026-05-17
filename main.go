@@ -66,6 +66,13 @@ type certMetadata struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+func (c config) signerPassphraseRequired() bool {
+	if c.HasIntermediate {
+		return c.IntermediatePassphraseSet
+	}
+	return c.CAPassphraseSet
+}
+
 type pageData struct {
 	HasCA                    bool
 	HasIntermediate          bool
@@ -252,7 +259,7 @@ func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg st
 		Error:                    errMsg,
 		DefaultCertYears:         1,
 		MaxCertYears:             maxCertValidityYear,
-		SignerPassphraseRequired: (hasCA && cfg.CAPassphraseSet && !cfg.HasIntermediate) || (hasCA && cfg.HasIntermediate && cfg.IntermediatePassphraseSet),
+		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(),
 		Lang:                     lang,
 		T:                        a.translations[lang],
 	}
@@ -421,7 +428,7 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 	}
 	keyPassphrase := strings.TrimSpace(r.FormValue("key_passphrase"))
 	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
-	requiresSignerPassphrase := (cfg.HasIntermediate && cfg.IntermediatePassphraseSet) || (!cfg.HasIntermediate && cfg.CAPassphraseSet)
+	requiresSignerPassphrase := cfg.signerPassphraseRequired()
 	if requiresSignerPassphrase && signerPassphrase == "" {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
@@ -663,6 +670,25 @@ func parsePrivateKeyPEM(keyPEM []byte, passphrase, missingErr, invalidErr string
 	rsaKey, ok := pkcs8Key.(*rsa.PrivateKey)
 	if !ok {
 		return nil, errors.New(invalidErr)
+	}
+	return rsaKey, nil
+}
+
+func parseUnencryptedPrivateKeyPEM(keyPEM []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(keyPEM)
+	if block == nil || x509.IsEncryptedPEMBlock(block) {
+		return nil, errors.New("private key not directly readable")
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	pkcs8Key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	rsaKey, ok := pkcs8Key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("unsupported private key type")
 	}
 	return rsaKey, nil
 }
@@ -1011,7 +1037,7 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 		"ca-cert.pem":   caCertPEM,
 	}
 	if exportPassphrase != "" {
-		if key, parseErr := parsePrivateKeyPEM(keyPEM, "", "chiave privata protetta da passphrase", "chiave privata non valida"); parseErr == nil {
+		if key, parseErr := parseUnencryptedPrivateKeyPEM(keyPEM); parseErr == nil {
 			encryptedKeyPEM, encodeErr := encodePrivateKeyPEM(key, exportPassphrase)
 			if encodeErr != nil {
 				return encodeErr
