@@ -848,21 +848,21 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		signerName = "intermedia"
 		signerKeyPath = filepath.Join(a.dataDir, "intermediate-key.pem")
 	}
-	caBlock, _ := pem.Decode(signerCertPEM)
-	if caBlock == nil {
+	signerBlock, _ := pem.Decode(signerCertPEM)
+	if signerBlock == nil {
 		return fmt.Errorf("certificato %s non valido", signerName)
 	}
-	caCert, err := x509.ParseCertificate(caBlock.Bytes)
+	signerCert, err := x509.ParseCertificate(signerBlock.Bytes)
 	if err != nil {
 		return err
 	}
 
-	caKeyPEM, err := os.ReadFile(signerKeyPath)
+	signerKeyPEM, err := os.ReadFile(signerKeyPath)
 	if err != nil {
 		return fmt.Errorf("chiave %s non trovata", signerName)
 	}
-	caKey, err := parsePrivateKeyPEM(
-		caKeyPEM,
+	signerKey, err := parsePrivateKeyPEM(
+		signerKeyPEM,
 		signerPassphrase,
 		fmt.Sprintf("passphrase %s richiesta", signerName),
 		fmt.Sprintf("passphrase %s non valida", signerName),
@@ -901,7 +901,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		return err
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &key.PublicKey, caKey)
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, signerCert, &key.PublicKey, signerKey)
 	if err != nil {
 		return err
 	}
@@ -1043,7 +1043,7 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 			}
 			files["key.pem"] = encryptedKeyPEM
 		} else {
-			files["key.pem"] = keyPEM
+			return errors.New("export passphrase can only be used with unencrypted certificate keys")
 		}
 	} else {
 		files["key.pem"] = keyPEM

@@ -321,6 +321,30 @@ func TestCreateServerCertRequiresSignerPassphrase(t *testing.T) {
 	}
 }
 
+func TestHandleDownloadArchiveRejectsExportPassphraseForEncryptedKey(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "leaf-pass", ""); err != nil {
+		t.Fatalf("createServerCert() error = %v", err)
+	}
+	certs, err := a.listCerts()
+	if err != nil {
+		t.Fatalf("listCerts() error = %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/download?kind=all-tar-gz&id="+certs[0].ID+"&export_passphrase=export-pass", nil)
+	rr := httptest.NewRecorder()
+	a.handleDownload(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("handleDownload() status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+}
+
 func createTestCertificate(t *testing.T) (*app, string) {
 	t.Helper()
 
