@@ -37,6 +37,7 @@ const (
 	defaultCertValidityYears = 10
 	defaultLanguage          = "en"
 	certNotBeforeOffset      = -1 * time.Hour
+	crlNextUpdateDays        = 7
 )
 
 var (
@@ -85,6 +86,7 @@ func (c config) signerPassphraseRequired() bool {
 type pageData struct {
 	HasCA                    bool
 	HasIntermediate          bool
+	HasCRL                   bool
 	CAYears                  int
 	IntermediateYears        int
 	Config                   config
@@ -126,6 +128,7 @@ func main() {
 	mux.HandleFunc("/certs/renew", a.handleRenewCert)
 	mux.HandleFunc("/certs/delete", a.handleDeleteCert)
 	mux.HandleFunc("/certs/table", a.handleCertTable)
+	mux.HandleFunc("/certs/crl/generate", a.handleGenerateCRL)
 	mux.HandleFunc("/download", a.handleDownload)
 	mux.HandleFunc("/static/styles.css", handleStyles)
 	mux.HandleFunc("/static/app.js", handleAppJS)
@@ -266,6 +269,7 @@ func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg st
 	data := pageData{
 		HasCA:                    hasCA,
 		HasIntermediate:          hasCA && a.hasIntermediate(),
+		HasCRL:                   a.hasCRL(),
 		CAYears:                  caYears,
 		IntermediateYears:        intermediateYears,
 		Config:                   cfg,
@@ -625,6 +629,114 @@ func (a *app) handleRevokeCert(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_revoked"), safeID)), http.StatusSeeOther)
 }
 
+func (a *app) generateCRL(lang, signerPassphrase string) error {
+	signerCertPath := filepath.Join(a.dataDir, "ca-cert.pem")
+	signerKeyPath := filepath.Join(a.dataDir, "ca-key.pem")
+	missingErr := a.translate(lang, "msg.ca_passphrase_required")
+	invalidErr := a.translate(lang, "msg.ca_passphrase_invalid")
+	if a.hasIntermediate() {
+		signerCertPath = filepath.Join(a.dataDir, "intermediate-cert.pem")
+		signerKeyPath = filepath.Join(a.dataDir, "intermediate-key.pem")
+		missingErr = a.translate(lang, "msg.intermediate_passphrase_required")
+		invalidErr = a.translate(lang, "msg.intermediate_passphrase_invalid")
+	}
+	signerCertPEM, err := os.ReadFile(signerCertPath)
+	if err != nil {
+		return errors.New(a.translate(lang, "msg.crl_signer_cert_not_found"))
+	}
+	signerBlock, _ := pem.Decode(signerCertPEM)
+	if signerBlock == nil {
+		return errors.New(a.translate(lang, "msg.crl_signer_cert_invalid"))
+	}
+	signerCert, err := x509.ParseCertificate(signerBlock.Bytes)
+	if err != nil {
+		return err
+	}
+	signerKeyPEM, err := os.ReadFile(signerKeyPath)
+	if err != nil {
+		return errors.New(a.translate(lang, "msg.crl_signer_key_not_found"))
+	}
+	signerKey, err := parsePrivateKeyPEM(signerKeyPEM, signerPassphrase, missingErr, invalidErr)
+	if err != nil {
+		return err
+	}
+
+	certs, err := a.listCerts()
+	if err != nil {
+		return err
+	}
+	var revokedCerts []x509.RevocationListEntry
+	for _, meta := range certs {
+		if meta.RevokedAt == nil {
+			continue
+		}
+		certDir := filepath.Join(a.dataDir, "certs", meta.ID)
+		certPEM, err := os.ReadFile(filepath.Join(certDir, "cert.pem"))
+		if err != nil {
+			log.Printf("generateCRL: skipping cert %s: read cert.pem: %v", meta.ID, err)
+			continue
+		}
+		block, _ := pem.Decode(certPEM)
+		if block == nil {
+			log.Printf("generateCRL: skipping cert %s: no PEM block in cert.pem", meta.ID)
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			log.Printf("generateCRL: skipping cert %s: parse cert.pem: %v", meta.ID, err)
+			continue
+		}
+		revokedCerts = append(revokedCerts, x509.RevocationListEntry{
+			SerialNumber:   cert.SerialNumber,
+			RevocationTime: *meta.RevokedAt,
+		})
+	}
+
+	now := time.Now()
+	tmpl := &x509.RevocationList{
+		Number:     big.NewInt(now.Unix()),
+		ThisUpdate: now,
+		// NextUpdate tells CRL consumers how long this CRL is valid.
+		NextUpdate:                now.AddDate(0, 0, crlNextUpdateDays),
+		RevokedCertificateEntries: revokedCerts,
+	}
+	crlDER, err := x509.CreateRevocationList(rand.Reader, tmpl, signerCert, signerKey)
+	if err != nil {
+		return err
+	}
+	if err := writePEM(filepath.Join(a.dataDir, "crl.pem"), "X509 CRL", crlDER, 0o640); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(a.dataDir, "crl.der"), crlDER, 0o640)
+}
+
+func (a *app) handleGenerateCRL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
+	if cfg.signerPassphraseRequired() && signerPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+		return
+	}
+	if err := a.generateCRL(lang, signerPassphrase); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.crl_generated")), http.StatusSeeOther)
+}
+
 func (a *app) handleRenewCert(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -722,6 +834,10 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 		return filepath.Join(a.dataDir, "intermediate-cert.pem"), "intermediate-cert.pem", "application/x-pem-file", nil
 	case "intermediate-chain-pem":
 		return filepath.Join(a.dataDir, "intermediate-chain.pem"), "intermediate-chain.pem", "application/x-pem-file", nil
+	case "crl-pem":
+		return filepath.Join(a.dataDir, "crl.pem"), "crl.pem", "application/x-pem-file", nil
+	case "crl-der":
+		return filepath.Join(a.dataDir, "crl.der"), "crl.der", "application/pkix-crl", nil
 	case "csr-pem":
 		base, safeID, err := a.resolveCertificateDir(id)
 		if err != nil {
@@ -840,6 +956,11 @@ func (a *app) hasIntermediate() bool {
 		return false
 	}
 	return true
+}
+
+func (a *app) hasCRL() bool {
+	_, err := os.Stat(filepath.Join(a.dataDir, "crl.pem"))
+	return err == nil
 }
 
 func parsePrivateKeyPEM(keyPEM []byte, passphrase, missingErr, invalidErr string) (*rsa.PrivateKey, error) {

@@ -68,6 +68,12 @@
   "years.value": "%d 年",
   "msg.ca_already_exists": "CA は既に存在します",
   "msg.ca_passphrase_required": "CA パスフレーズが必要です",
+  "msg.ca_passphrase_invalid": "CA パスフレーズが無効です",
+  "msg.intermediate_passphrase_required": "中間パスフレーズが必要です",
+  "msg.intermediate_passphrase_invalid": "中間パスフレーズが無効です",
+  "msg.crl_signer_cert_not_found": "署名者証明書が見つかりません",
+  "msg.crl_signer_cert_invalid": "署名者証明書が無効です",
+  "msg.crl_signer_key_not_found": "署名者鍵が見つかりません",
   "msg.ca_created": "CA を作成しました",
   "msg.ca_passphrase_updated": "CA パスフレーズを更新しました",
   "msg.intermediate_already_exists": "中間証明書は既に存在します",
@@ -85,5 +91,8 @@
   "msg.cert_deleted": "証明書 %s を削除しました",
   "msg.invalid_language": "無効な言語です",
   "msg.create_ca_before_language_change": "言語を保存するには先に CA を作成してください",
-  "msg.language_updated": "言語を更新しました"
+  "msg.language_updated": "言語を更新しました",
+  "msg.crl_generated": "CRL を生成しました",
+  "crl.generate.button": "CRL を生成",
+  "crl.download.label": "CRL をダウンロード"
 }

@@ -68,6 +68,12 @@
   "years.value": "%d anni",
   "msg.ca_already_exists": "La CA esiste già",
   "msg.ca_passphrase_required": "Passphrase CA richiesta",
+  "msg.ca_passphrase_invalid": "Passphrase CA non valida",
+  "msg.intermediate_passphrase_required": "Passphrase intermedia richiesta",
+  "msg.intermediate_passphrase_invalid": "Passphrase intermedia non valida",
+  "msg.crl_signer_cert_not_found": "Certificato firmatario non trovato",
+  "msg.crl_signer_cert_invalid": "Certificato firmatario non valido",
+  "msg.crl_signer_key_not_found": "Chiave firmataria non trovata",
   "msg.ca_created": "CA creata con successo",
   "msg.ca_passphrase_updated": "Passphrase CA aggiornata con successo",
   "msg.intermediate_already_exists": "Il certificato intermedio esiste già",
@@ -85,5 +91,8 @@
   "msg.cert_deleted": "Certificato %s eliminato con successo",
   "msg.invalid_language": "Lingua non valida",
   "msg.create_ca_before_language_change": "Crea prima la CA per salvare la lingua",
-  "msg.language_updated": "Lingua aggiornata con successo"
+  "msg.language_updated": "Lingua aggiornata con successo",
+  "msg.crl_generated": "CRL generato con successo",
+  "crl.generate.button": "Genera CRL",
+  "crl.download.label": "Scarica CRL"
 }
