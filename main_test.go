@@ -493,7 +493,12 @@ func assertIPAddresses(t *testing.T, got []net.IP, want []string) {
 }
 
 func TestGenerateCRL(t *testing.T) {
+	translations, err := loadTranslations()
+	if err != nil {
+		t.Fatalf("loadTranslations() error = %v", err)
+	}
 	a, certID := createTestCertificate(t)
+	a.translations = translations
 
 	// Revoke the certificate
 	now := time.Now()
@@ -508,7 +513,7 @@ func TestGenerateCRL(t *testing.T) {
 	}
 
 	// Generate CRL
-	if err := a.generateCRL(""); err != nil {
+	if err := a.generateCRL("en", ""); err != nil {
 		t.Fatalf("generateCRL() error = %v", err)
 	}
 

@@ -626,24 +626,24 @@ func (a *app) handleRevokeCert(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_revoked"), safeID)), http.StatusSeeOther)
 }
 
-func (a *app) generateCRL(signerPassphrase string) error {
+func (a *app) generateCRL(lang, signerPassphrase string) error {
 	signerCertPath := filepath.Join(a.dataDir, "ca-cert.pem")
 	signerKeyPath := filepath.Join(a.dataDir, "ca-key.pem")
-	missingErr := "CA passphrase required"
-	invalidErr := "invalid CA passphrase"
+	missingErr := a.translate(lang, "msg.ca_passphrase_required")
+	invalidErr := a.translate(lang, "msg.ca_passphrase_invalid")
 	if a.hasIntermediate() {
 		signerCertPath = filepath.Join(a.dataDir, "intermediate-cert.pem")
 		signerKeyPath = filepath.Join(a.dataDir, "intermediate-key.pem")
-		missingErr = "intermediate passphrase required"
-		invalidErr = "invalid intermediate passphrase"
+		missingErr = a.translate(lang, "msg.intermediate_passphrase_required")
+		invalidErr = a.translate(lang, "msg.intermediate_passphrase_invalid")
 	}
 	signerCertPEM, err := os.ReadFile(signerCertPath)
 	if err != nil {
-		return errors.New("signer certificate not found")
+		return errors.New(a.translate(lang, "msg.crl_signer_cert_not_found"))
 	}
 	signerBlock, _ := pem.Decode(signerCertPEM)
 	if signerBlock == nil {
-		return errors.New("invalid signer certificate")
+		return errors.New(a.translate(lang, "msg.crl_signer_cert_invalid"))
 	}
 	signerCert, err := x509.ParseCertificate(signerBlock.Bytes)
 	if err != nil {
@@ -651,7 +651,7 @@ func (a *app) generateCRL(signerPassphrase string) error {
 	}
 	signerKeyPEM, err := os.ReadFile(signerKeyPath)
 	if err != nil {
-		return errors.New("signer key not found")
+		return errors.New(a.translate(lang, "msg.crl_signer_key_not_found"))
 	}
 	signerKey, err := parsePrivateKeyPEM(signerKeyPEM, signerPassphrase, missingErr, invalidErr)
 	if err != nil {
@@ -727,7 +727,7 @@ func (a *app) handleGenerateCRL(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.generateCRL(signerPassphrase); err != nil {
+	if err := a.generateCRL(lang, signerPassphrase); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
