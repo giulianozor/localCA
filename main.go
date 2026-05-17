@@ -670,14 +670,17 @@ func (a *app) generateCRL(signerPassphrase string) error {
 		certDir := filepath.Join(a.dataDir, "certs", meta.ID)
 		certPEM, err := os.ReadFile(filepath.Join(certDir, "cert.pem"))
 		if err != nil {
+			log.Printf("generateCRL: skipping cert %s: read cert.pem: %v", meta.ID, err)
 			continue
 		}
 		block, _ := pem.Decode(certPEM)
 		if block == nil {
+			log.Printf("generateCRL: skipping cert %s: no PEM block in cert.pem", meta.ID)
 			continue
 		}
 		cert, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
+			log.Printf("generateCRL: skipping cert %s: parse cert.pem: %v", meta.ID, err)
 			continue
 		}
 		revokedCerts = append(revokedCerts, x509.RevocationListEntry{
@@ -688,9 +691,10 @@ func (a *app) generateCRL(signerPassphrase string) error {
 
 	now := time.Now()
 	tmpl := &x509.RevocationList{
-		Number:              big.NewInt(now.UnixNano()),
-		ThisUpdate:          now,
-		NextUpdate:          now.AddDate(0, 0, 7),
+		Number:     big.NewInt(now.UnixNano()),
+		ThisUpdate: now,
+		// NextUpdate is set 7 days out, a reasonable interval for a local CA.
+		NextUpdate:                now.AddDate(0, 0, 7),
 		RevokedCertificateEntries: revokedCerts,
 	}
 	crlDER, err := x509.CreateRevocationList(rand.Reader, tmpl, signerCert, signerKey)
