@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -396,6 +398,17 @@ func (a *app) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	kind := r.URL.Query().Get("kind")
 	id := r.URL.Query().Get("id")
+	if kind == "all-tar-gz" {
+		path, safeID, err := a.resolveCertificateDir(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := writeCertificateArchive(w, path, safeID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
 	path, filename, ctype, err := a.resolveDownload(kind, id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -426,7 +439,7 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 		return filepath.Join(a.dataDir, "ca-key-pkcs8.pem"), "ca-key-pkcs8.pem", "application/x-pem-file", nil
 	case "ca-key-der":
 		return filepath.Join(a.dataDir, "ca-key.der"), "ca-key.der", "application/octet-stream", nil
-	case "cert-pem", "cert-der", "chain-pem", "key-pem", "key-pkcs8-pem", "key-der":
+	case "cert-pem", "cert-der", "chain-pem", "csr-pem", "key-pem", "key-pkcs8-pem", "key-der":
 		base, safeID, err := a.resolveCertificateDir(id)
 		if err != nil {
 			return "", "", "", err
@@ -438,6 +451,8 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 			return filepath.Join(base, "cert.der"), safeID + "-cert.der", "application/pkix-cert", nil
 		case "chain-pem":
 			return filepath.Join(base, "chain.pem"), safeID + "-chain.pem", "application/x-pem-file", nil
+		case "csr-pem":
+			return filepath.Join(base, "csr.pem"), safeID + "-csr.pem", "application/x-pem-file", nil
 		case "key-pem":
 			return filepath.Join(base, "key.pem"), safeID + "-key.pem", "application/x-pem-file", nil
 		case "key-pkcs8-pem":
@@ -518,6 +533,19 @@ func parseSANs(input string) ([]string, error) {
 		return nil, errors.New("inserire almeno un SAN (FQDN, IP o host .local/.locsl)")
 	}
 	return result, nil
+}
+
+func splitSANs(sans []string) ([]string, []net.IP) {
+	dnsNames := make([]string, 0, len(sans))
+	ipAddresses := make([]net.IP, 0, len(sans))
+	for _, san := range sans {
+		if ip := net.ParseIP(san); ip != nil {
+			ipAddresses = append(ipAddresses, ip)
+			continue
+		}
+		dnsNames = append(dnsNames, san)
+	}
+	return dnsNames, ipAddresses
 }
 
 func filterCertificates(certs []certMetadata, query string) []certMetadata {
@@ -626,6 +654,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int) erro
 	}
 
 	now := time.Now()
+	dnsNames, ipAddresses := splitSANs(sans)
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
@@ -635,13 +664,18 @@ func (a *app) createServerCert(commonName string, sans []string, years int) erro
 		NotAfter:    now.AddDate(years, 0, 0),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		DNSNames:    dnsNames,
+		IPAddresses: ipAddresses,
 	}
-	for _, san := range sans {
-		if ip := net.ParseIP(san); ip != nil {
-			tmpl.IPAddresses = append(tmpl.IPAddresses, ip)
-			continue
-		}
-		tmpl.DNSNames = append(tmpl.DNSNames, san)
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{
+			CommonName: commonName,
+		},
+		DNSNames:    append([]string(nil), dnsNames...),
+		IPAddresses: append([]net.IP(nil), ipAddresses...),
+	}, key)
+	if err != nil {
+		return err
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &key.PublicKey, caKey)
@@ -655,6 +689,9 @@ func (a *app) createServerCert(commonName string, sans []string, years int) erro
 		return err
 	}
 
+	if err := writePEM(filepath.Join(certDir, "csr.pem"), "CERTIFICATE REQUEST", csrDER, 0o640); err != nil {
+		return err
+	}
 	if err := writePEM(filepath.Join(certDir, "cert.pem"), "CERTIFICATE", certDER, 0o640); err != nil {
 		return err
 	}
@@ -752,6 +789,55 @@ func certID() string {
 func writePEM(path, pemType string, der []byte, perm os.FileMode) error {
 	b := pem.EncodeToMemory(&pem.Block{Type: pemType, Bytes: der})
 	return os.WriteFile(path, b, perm)
+}
+
+func writeCertificateArchive(w http.ResponseWriter, certDir, safeID string) error {
+	entries, err := os.ReadDir(certDir)
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+safeID+".tar.gz\"")
+
+	gzipWriter := gzip.NewWriter(w)
+	defer gzipWriter.Close()
+
+	tarWriter := tar.NewWriter(gzipWriter)
+	defer tarWriter.Close()
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(certDir, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		header, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		header.Name = entry.Name()
+		if err := tarWriter.WriteHeader(header); err != nil {
+			return err
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(tarWriter, file); err != nil {
+			file.Close()
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 //go:embed ui/index.html
