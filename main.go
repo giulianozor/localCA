@@ -37,6 +37,7 @@ const (
 	defaultCertValidityYears = 10
 	defaultLanguage          = "en"
 	certNotBeforeOffset      = -1 * time.Hour
+	crlNextUpdateDays        = 7
 )
 
 var (
@@ -85,6 +86,7 @@ func (c config) signerPassphraseRequired() bool {
 type pageData struct {
 	HasCA                    bool
 	HasIntermediate          bool
+	HasCRL                   bool
 	CAYears                  int
 	IntermediateYears        int
 	Config                   config
@@ -267,6 +269,7 @@ func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg st
 	data := pageData{
 		HasCA:                    hasCA,
 		HasIntermediate:          hasCA && a.hasIntermediate(),
+		HasCRL:                   a.hasCRL(),
 		CAYears:                  caYears,
 		IntermediateYears:        intermediateYears,
 		Config:                   cfg,
@@ -691,10 +694,10 @@ func (a *app) generateCRL(lang, signerPassphrase string) error {
 
 	now := time.Now()
 	tmpl := &x509.RevocationList{
-		Number:     big.NewInt(now.UnixNano()),
+		Number:     big.NewInt(now.Unix()),
 		ThisUpdate: now,
-		// NextUpdate is set 7 days out, a reasonable interval for a local CA.
-		NextUpdate:                now.AddDate(0, 0, 7),
+		// NextUpdate tells CRL consumers how long this CRL is valid.
+		NextUpdate:                now.AddDate(0, 0, crlNextUpdateDays),
 		RevokedCertificateEntries: revokedCerts,
 	}
 	crlDER, err := x509.CreateRevocationList(rand.Reader, tmpl, signerCert, signerKey)
@@ -953,6 +956,11 @@ func (a *app) hasIntermediate() bool {
 		return false
 	}
 	return true
+}
+
+func (a *app) hasCRL() bool {
+	_, err := os.Stat(filepath.Join(a.dataDir, "crl.pem"))
+	return err == nil
 }
 
 func parsePrivateKeyPEM(keyPEM []byte, passphrase, missingErr, invalidErr string) (*rsa.PrivateKey, error) {

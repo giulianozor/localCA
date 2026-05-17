@@ -56,7 +56,7 @@
           {{end}}
           <button type="submit">{{index .T "crl.generate.button"}}</button>
         </form>
-        <p>{{index .T "crl.download.label"}}: <a href="/download?kind=crl-pem">CRL PEM</a> · <a href="/download?kind=crl-der">CRL DER</a></p>
+        {{if .HasCRL}}<p>{{index .T "crl.download.label"}}: <a href="/download?kind=crl-pem">CRL PEM</a> · <a href="/download?kind=crl-der">CRL DER</a></p>{{end}}
       </div>
       {{if not .HasIntermediate}}
         <div class="card">
