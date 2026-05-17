@@ -39,6 +39,11 @@ const (
 	certNotBeforeOffset      = -1 * time.Hour
 )
 
+var (
+	errCAConfigNotFound     = errors.New("ca configuration not found")
+	errCertificateIDInvalid = errors.New("invalid certificate id")
+)
+
 type app struct {
 	dataDir      string
 	defaultLang  string
@@ -428,6 +433,10 @@ func (a *app) handleChangeCAPassphrase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.changeCAPassphrase(currentPassphrase, newPassphrase); err != nil {
+		if errors.Is(err, errCAConfigNotFound) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+			return
+		}
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -460,6 +469,10 @@ func (a *app) handleChangeIntermediatePassphrase(w http.ResponseWriter, r *http.
 		return
 	}
 	if err := a.changeIntermediatePassphrase(currentPassphrase, newPassphrase); err != nil {
+		if errors.Is(err, errCAConfigNotFound) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+			return
+		}
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -563,6 +576,10 @@ func (a *app) handleChangeCertPassphrase(w http.ResponseWriter, r *http.Request)
 	currentPassphrase := strings.TrimSpace(r.FormValue("current_passphrase"))
 	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
 	if err := a.changeCertificatePassphrase(id, currentPassphrase, newPassphrase); err != nil {
+		if errors.Is(err, errCertificateIDInvalid) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
+			return
+		}
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -917,7 +934,7 @@ func (a *app) createCA(cn, org, country, passphrase string) error {
 			Country:      []string{country},
 		},
 		NotBefore:             now.Add(certNotBeforeOffset),
-		NotAfter:              now.AddDate(intermediateYears, 0, 0),
+		NotAfter:              now.AddDate(caYears, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -989,7 +1006,7 @@ func (a *app) createIntermediateCA(cn, org, country, caPassphrase, passphrase st
 			Country:      []string{country},
 		},
 		NotBefore:             now.Add(certNotBeforeOffset),
-		NotAfter:              now.AddDate(caYears, 0, 0),
+		NotAfter:              now.AddDate(intermediateYears, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -1159,8 +1176,8 @@ func (a *app) changeCAPassphrase(currentPassphrase, newPassphrase string) error 
 		filepath.Join(a.dataDir, "ca-key.pem"),
 		currentPassphrase,
 		newPassphrase,
-		"passphrase CA richiesta",
-		"passphrase CA non valida",
+		"CA passphrase required",
+		"invalid CA passphrase",
 	); err != nil {
 		return err
 	}
@@ -1169,7 +1186,7 @@ func (a *app) changeCAPassphrase(currentPassphrase, newPassphrase string) error 
 		return err
 	}
 	if !has {
-		return errors.New("configurazione CA non trovata")
+		return errCAConfigNotFound
 	}
 	cfg.CAPassphraseSet = newPassphrase != ""
 	return a.saveConfig(cfg)
@@ -1180,8 +1197,8 @@ func (a *app) changeIntermediatePassphrase(currentPassphrase, newPassphrase stri
 		filepath.Join(a.dataDir, "intermediate-key.pem"),
 		currentPassphrase,
 		newPassphrase,
-		"passphrase intermedia richiesta",
-		"passphrase intermedia non valida",
+		"intermediate passphrase required",
+		"invalid intermediate passphrase",
 	); err != nil {
 		return err
 	}
@@ -1190,7 +1207,7 @@ func (a *app) changeIntermediatePassphrase(currentPassphrase, newPassphrase stri
 		return err
 	}
 	if !has {
-		return errors.New("configurazione CA non trovata")
+		return errCAConfigNotFound
 	}
 	cfg.IntermediatePassphraseSet = newPassphrase != ""
 	return a.saveConfig(cfg)
@@ -1199,14 +1216,14 @@ func (a *app) changeIntermediatePassphrase(currentPassphrase, newPassphrase stri
 func (a *app) changeCertificatePassphrase(id, currentPassphrase, newPassphrase string) error {
 	certDir, _, err := a.resolveCertificateDir(id)
 	if err != nil {
-		return errors.New("id certificato non valido")
+		return errCertificateIDInvalid
 	}
 	return updatePrivateKeyPassphrase(
 		filepath.Join(certDir, "key.pem"),
 		currentPassphrase,
 		newPassphrase,
-		"passphrase certificato richiesta",
-		"passphrase certificato non valida",
+		"certificate passphrase required",
+		"invalid certificate passphrase",
 	)
 }
 
