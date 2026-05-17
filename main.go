@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/rand"
 	"crypto/rsa"
@@ -664,8 +665,8 @@ func (a *app) createServerCert(commonName string, sans []string, years int) erro
 		NotAfter:    now.AddDate(years, 0, 0),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		DNSNames:    dnsNames,
-		IPAddresses: ipAddresses,
+		DNSNames:    append([]string(nil), dnsNames...),
+		IPAddresses: append([]net.IP(nil), ipAddresses...),
 	}
 	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
 		Subject: pkix.Name{
@@ -797,14 +798,9 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID string) erro
 		return err
 	}
 
-	w.Header().Set("Content-Type", "application/gzip")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+safeID+".tar.gz\"")
-
-	gzipWriter := gzip.NewWriter(w)
-	defer gzipWriter.Close()
-
+	var archive bytes.Buffer
+	gzipWriter := gzip.NewWriter(&archive)
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -824,19 +820,37 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID string) erro
 			return err
 		}
 
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		if _, err := io.Copy(tarWriter, file); err != nil {
-			file.Close()
-			return err
-		}
-		if err := file.Close(); err != nil {
+		if err := addFileToTar(tarWriter, path); err != nil {
 			return err
 		}
 	}
 
+	if err := tarWriter.Close(); err != nil {
+		return err
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+safeID+".tar.gz\"")
+	_, err = w.Write(archive.Bytes())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func addFileToTar(tarWriter *tar.Writer, path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open archive file %s: %w", path, err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(tarWriter, file); err != nil {
+		return fmt.Errorf("copy archive file %s: %w", path, err)
+	}
 	return nil
 }
 
