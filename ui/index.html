@@ -44,12 +44,17 @@
            <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.Organization}}<br>
            <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.Country}}<br>
            <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.CAValidityYears}}</p>
+        <form method="post" action="/ca/passphrase">
+          <label>{{index .T "passphrase.current_label"}}<input name="current_passphrase" type="password"></label>
+          <label>{{index .T "passphrase.new_label"}}<input name="new_passphrase" type="password" placeholder="{{index .T "passphrase.new_placeholder"}}"></label>
+          <button type="submit">{{index .T "ca.passphrase.button"}}</button>
+        </form>
         <p>{{index .T "export.label"}}: <a href="/download?kind=ca-cert-pem">CA cert PEM</a> · <a href="/download?kind=ca-cert-der">CA cert DER</a> · <a href="/download?kind=ca-key-pem">CA key PEM</a></p>
       </div>
       {{if not .HasIntermediate}}
         <div class="card">
           <h2>{{index .T "intermediate.create.title"}}</h2>
-          <p class="muted">{{printf (index .T "intermediate.create.validity") .CAYears}}</p>
+          <p class="muted">{{printf (index .T "intermediate.create.validity") .IntermediateYears}}</p>
           <form method="post" action="/intermediate/create">
             <label>{{index .T "intermediate.create.cn_label"}}<input name="intermediate_common_name" placeholder="{{index .T "intermediate.create.cn_placeholder"}}"></label>
             <label>{{index .T "intermediate.create.org_label"}}<input name="intermediate_organization" placeholder="{{.Config.Organization}}"></label>
@@ -68,6 +73,11 @@
              <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.IntermediateOrganization}}<br>
              <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.IntermediateCountry}}<br>
              <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.IntermediateValidityYears}}</p>
+          <form method="post" action="/intermediate/passphrase">
+            <label>{{index .T "passphrase.current_label"}}<input name="current_passphrase" type="password"></label>
+            <label>{{index .T "passphrase.new_label"}}<input name="new_passphrase" type="password" placeholder="{{index .T "passphrase.new_placeholder"}}"></label>
+            <button type="submit">{{index .T "intermediate.passphrase.button"}}</button>
+          </form>
           <p>{{index .T "export.label"}}: <a href="/download?kind=intermediate-cert-pem">Intermediate cert PEM</a> · <a href="/download?kind=intermediate-chain-pem">Intermediate chain PEM</a></p>
         </div>
       {{end}}
@@ -96,7 +106,7 @@
           <label>{{index .T "cert.list.filter_label"}}<input class="js-cert-filter-input" name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}"></label>
         </form>
         <table>
-          <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
+          <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.status"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
           <tbody class="js-cert-table-body">
             {{range .Certificates}}
               <tr>
@@ -104,6 +114,7 @@
                 <td>{{.CommonName}}</td>
                 <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
                 <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
+                <td>{{if .RevokedAt}}{{index $.T "cert.status.revoked"}}{{else}}{{index $.T "cert.status.active"}}{{end}}</td>
                 <td>
                   <form class="inline-form" method="get" action="/download">
                     <input type="hidden" name="kind" value="all-tar-gz">
@@ -111,6 +122,26 @@
                     <input name="export_passphrase" type="password" placeholder="{{index $.T "cert.list.export_passphrase_placeholder"}}">
                     <button type="submit">tar.gz</button>
                   </form>
+                  <form class="inline-form" method="post" action="/certs/passphrase">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <input name="current_passphrase" type="password" placeholder="{{index $.T "passphrase.current_short"}}">
+                    <input name="new_passphrase" type="password" placeholder="{{index $.T "passphrase.new_short"}}">
+                    <button type="submit">{{index $.T "cert.list.passphrase"}}</button>
+                  </form>
+                  <form class="inline-form" method="post" action="/certs/renew">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <input name="key_passphrase" type="password" placeholder="{{index $.T "cert.create.key_passphrase_placeholder"}}">
+                    {{if $.SignerPassphraseRequired}}
+                      <input name="signer_passphrase" type="password" placeholder="{{index $.T "cert.create.signer_passphrase_label"}}">
+                    {{end}}
+                    <button type="submit">{{index $.T "cert.list.renew"}}</button>
+                  </form>
+                  {{if not .RevokedAt}}
+                    <form class="inline-form js-delete-cert-form" method="post" action="/certs/revoke" data-confirm-text="{{index $.T "cert.revoke.confirm"}}">
+                      <input type="hidden" name="id" value="{{.ID}}">
+                      <button type="submit">{{index $.T "cert.list.revoke"}}</button>
+                    </form>
+                  {{end}}
                   <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
                     <input type="hidden" name="id" value="{{.ID}}">
                     <button class="danger" type="submit">{{index $.T "cert.list.delete"}}</button>
@@ -118,7 +149,7 @@
                 </td>
               </tr>
             {{else}}
-              <tr><td colspan="5" class="muted">{{index .T "cert.list.none"}}</td></tr>
+              <tr><td colspan="6" class="muted">{{index .T "cert.list.none"}}</td></tr>
             {{end}}
           </tbody>
         </table>

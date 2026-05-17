@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,7 +26,7 @@ func TestParseValidityYears(t *testing.T) {
 		want    int
 		wantErr bool
 	}{
-		{name: "default", input: "", want: 1},
+		{name: "default", input: "", want: defaultCertValidityYears},
 		{name: "valid", input: "30", want: 30},
 		{name: "too high", input: "31", wantErr: true},
 		{name: "invalid", input: "abc", wantErr: true},
@@ -318,6 +319,91 @@ func TestCreateServerCertRequiresSignerPassphrase(t *testing.T) {
 	}
 	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "root-pass"); err != nil {
 		t.Fatalf("createServerCert() with signer passphrase error = %v", err)
+	}
+}
+
+func TestCreateIntermediateCAUsesDefaultValidityYears(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.createIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
+		t.Fatalf("createIntermediateCA() error = %v", err)
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v", err)
+	}
+	if !has {
+		t.Fatal("loadConfig() expected config to exist")
+	}
+	if cfg.IntermediateValidityYears != intermediateYears {
+		t.Fatalf("IntermediateValidityYears = %d, want %d", cfg.IntermediateValidityYears, intermediateYears)
+	}
+}
+
+func TestChangeCAPassphraseSetAndRemove(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", "initial-pass"); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.changeCAPassphrase("initial-pass", "new-pass"); err != nil {
+		t.Fatalf("changeCAPassphrase(set) error = %v", err)
+	}
+	if err := a.createServerCert("with-new-pass.local", []string{"with-new-pass.local"}, 1, "", "new-pass"); err != nil {
+		t.Fatalf("createServerCert() with new signer passphrase error = %v", err)
+	}
+	if err := a.changeCAPassphrase("new-pass", ""); err != nil {
+		t.Fatalf("changeCAPassphrase(remove) error = %v", err)
+	}
+	if err := a.createServerCert("without-pass.local", []string{"without-pass.local"}, 1, "", ""); err != nil {
+		t.Fatalf("createServerCert() without signer passphrase error = %v", err)
+	}
+}
+
+func TestRevokeAndRenewCertificate(t *testing.T) {
+	a, certID := createTestCertificate(t)
+	revokeForm := url.Values{}
+	revokeForm.Set("id", certID)
+	revokeReq := httptest.NewRequest(http.MethodPost, "/certs/revoke", strings.NewReader(revokeForm.Encode()))
+	revokeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	revokeRR := httptest.NewRecorder()
+	a.handleRevokeCert(revokeRR, revokeReq)
+	if revokeRR.Code != http.StatusSeeOther {
+		t.Fatalf("handleRevokeCert() status = %d, want %d", revokeRR.Code, http.StatusSeeOther)
+	}
+	certDir := filepath.Join(a.dataDir, "certs", certID)
+	meta, err := a.loadCertMetadata(certDir)
+	if err != nil {
+		t.Fatalf("loadCertMetadata() error = %v", err)
+	}
+	if meta.RevokedAt == nil {
+		t.Fatal("expected certificate to be revoked")
+	}
+
+	renewForm := url.Values{}
+	renewForm.Set("id", certID)
+	renewReq := httptest.NewRequest(http.MethodPost, "/certs/renew", strings.NewReader(renewForm.Encode()))
+	renewReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	renewRR := httptest.NewRecorder()
+	a.handleRenewCert(renewRR, renewReq)
+	if renewRR.Code != http.StatusSeeOther {
+		t.Fatalf("handleRenewCert() status = %d, want %d", renewRR.Code, http.StatusSeeOther)
+	}
+	certs, err := a.listCerts()
+	if err != nil {
+		t.Fatalf("listCerts() error = %v", err)
+	}
+	if len(certs) != 2 {
+		t.Fatalf("listCerts() len = %d, want 2 after renewal", len(certs))
 	}
 }
 
