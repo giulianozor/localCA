@@ -31,10 +31,12 @@ import (
 )
 
 const (
-	caYears             = 100
-	maxCertValidityYear = 30
-	defaultLanguage     = "en"
-	certNotBeforeOffset = -1 * time.Hour
+	caYears                  = 100
+	intermediateYears        = 30
+	maxCertValidityYear      = 30
+	defaultCertValidityYears = 10
+	defaultLanguage          = "en"
+	certNotBeforeOffset      = -1 * time.Hour
 )
 
 type app struct {
@@ -60,11 +62,12 @@ type config struct {
 }
 
 type certMetadata struct {
-	ID            string    `json:"id"`
-	CommonName    string    `json:"common_name"`
-	SANs          []string  `json:"sans"`
-	ValidityYears int       `json:"validity_years"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            string     `json:"id"`
+	CommonName    string     `json:"common_name"`
+	SANs          []string   `json:"sans"`
+	ValidityYears int        `json:"validity_years"`
+	CreatedAt     time.Time  `json:"created_at"`
+	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
 }
 
 func (c config) signerPassphraseRequired() bool {
@@ -78,6 +81,7 @@ type pageData struct {
 	HasCA                    bool
 	HasIntermediate          bool
 	CAYears                  int
+	IntermediateYears        int
 	Config                   config
 	Certificates             []certMetadata
 	CertFilter               string
@@ -108,8 +112,13 @@ func main() {
 	mux.HandleFunc("/", a.handleIndex)
 	mux.HandleFunc("/lang", a.handleSetLanguage)
 	mux.HandleFunc("/ca/create", a.handleCreateCA)
+	mux.HandleFunc("/ca/passphrase", a.handleChangeCAPassphrase)
 	mux.HandleFunc("/intermediate/create", a.handleCreateIntermediate)
+	mux.HandleFunc("/intermediate/passphrase", a.handleChangeIntermediatePassphrase)
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
+	mux.HandleFunc("/certs/passphrase", a.handleChangeCertPassphrase)
+	mux.HandleFunc("/certs/revoke", a.handleRevokeCert)
+	mux.HandleFunc("/certs/renew", a.handleRenewCert)
 	mux.HandleFunc("/certs/delete", a.handleDeleteCert)
 	mux.HandleFunc("/certs/table", a.handleCertTable)
 	mux.HandleFunc("/download", a.handleDownload)
@@ -253,12 +262,13 @@ func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg st
 		HasCA:                    hasCA,
 		HasIntermediate:          hasCA && a.hasIntermediate(),
 		CAYears:                  caYears,
+		IntermediateYears:        intermediateYears,
 		Config:                   cfg,
 		Certificates:             certs,
 		CertFilter:               filter,
 		Message:                  msg,
 		Error:                    errMsg,
-		DefaultCertYears:         1,
+		DefaultCertYears:         defaultCertValidityYears,
 		MaxCertYears:             maxCertValidityYear,
 		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(),
 		Lang:                     lang,
@@ -292,8 +302,9 @@ func (a *app) handleCertTable(w http.ResponseWriter, r *http.Request) {
 	})
 	certs = filterCertificates(certs, r.URL.Query().Get("q"))
 	data := pageData{
-		Certificates: certs,
-		T:            a.translations[lang],
+		Certificates:             certs,
+		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(),
+		T:                        a.translations[lang],
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := certTableRowsTemplate.Execute(w, data); err != nil {
@@ -395,6 +406,66 @@ func (a *app) handleCreateIntermediate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.intermediate_created")), http.StatusSeeOther)
 }
 
+func (a *app) handleChangeCAPassphrase(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	currentPassphrase := strings.TrimSpace(r.FormValue("current_passphrase"))
+	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
+	if cfg.CAPassphraseSet && currentPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
+		return
+	}
+	if err := a.changeCAPassphrase(currentPassphrase, newPassphrase); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_updated")), http.StatusSeeOther)
+}
+
+func (a *app) handleChangeIntermediatePassphrase(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	if !a.hasIntermediate() {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_intermediate_first")), http.StatusSeeOther)
+		return
+	}
+	currentPassphrase := strings.TrimSpace(r.FormValue("current_passphrase"))
+	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
+	if cfg.IntermediatePassphraseSet && currentPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+		return
+	}
+	if err := a.changeIntermediatePassphrase(currentPassphrase, newPassphrase); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.intermediate_passphrase_updated")), http.StatusSeeOther)
+}
+
 func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -471,6 +542,117 @@ func (a *app) handleDeleteCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_deleted"), safeID)), http.StatusSeeOther)
+}
+
+func (a *app) handleChangeCertPassphrase(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	id := strings.TrimSpace(r.FormValue("id"))
+	currentPassphrase := strings.TrimSpace(r.FormValue("current_passphrase"))
+	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
+	if err := a.changeCertificatePassphrase(id, currentPassphrase, newPassphrase); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_passphrase_updated"), id)), http.StatusSeeOther)
+}
+
+func (a *app) handleRevokeCert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	id := strings.TrimSpace(r.FormValue("id"))
+	certDir, safeID, err := a.resolveCertificateDir(id)
+	if err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
+		return
+	}
+	meta, err := a.loadCertMetadata(certDir)
+	if err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	if meta.RevokedAt != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_already_revoked"), safeID)), http.StatusSeeOther)
+		return
+	}
+	now := time.Now()
+	meta.RevokedAt = &now
+	if err := a.saveCertMetadata(certDir, meta); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_revoked"), safeID)), http.StatusSeeOther)
+}
+
+func (a *app) handleRenewCert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	id := strings.TrimSpace(r.FormValue("id"))
+	certDir, safeID, err := a.resolveCertificateDir(id)
+	if err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
+		return
+	}
+	meta, err := a.loadCertMetadata(certDir)
+	if err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	keyPassphrase := strings.TrimSpace(r.FormValue("key_passphrase"))
+	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
+	if cfg.signerPassphraseRequired() && signerPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+		return
+	}
+	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	if meta.RevokedAt == nil {
+		now := time.Now()
+		meta.RevokedAt = &now
+		if err := a.saveCertMetadata(certDir, meta); err != nil {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_renewed"), safeID)), http.StatusSeeOther)
 }
 
 func (a *app) handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -571,7 +753,7 @@ func (a *app) resolveCertificateDir(id string) (string, string, error) {
 func parseValidityYears(raw string) (int, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return 1, nil
+		return defaultCertValidityYears, nil
 	}
 	years, err := strconv.Atoi(raw)
 	if err != nil {
@@ -692,6 +874,22 @@ func parseUnencryptedPrivateKeyPEM(keyPEM []byte) (*rsa.PrivateKey, error) {
 	return rsaKey, nil
 }
 
+func updatePrivateKeyPassphrase(path, currentPassphrase, newPassphrase, missingErr, invalidErr string) error {
+	keyPEM, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	key, err := parsePrivateKeyPEM(keyPEM, currentPassphrase, missingErr, invalidErr)
+	if err != nil {
+		return err
+	}
+	updatedKeyPEM, err := encodePrivateKeyPEM(key, newPassphrase)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, updatedKeyPEM, 0o600)
+}
+
 func encodePrivateKeyPEM(key *rsa.PrivateKey, passphrase string) ([]byte, error) {
 	der := x509.MarshalPKCS1PrivateKey(key)
 	if passphrase == "" {
@@ -719,7 +917,7 @@ func (a *app) createCA(cn, org, country, passphrase string) error {
 			Country:      []string{country},
 		},
 		NotBefore:             now.Add(certNotBeforeOffset),
-		NotAfter:              now.AddDate(caYears, 0, 0),
+		NotAfter:              now.AddDate(intermediateYears, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -828,7 +1026,7 @@ func (a *app) createIntermediateCA(cn, org, country, caPassphrase, passphrase st
 	cfg.IntermediateCommonName = cn
 	cfg.IntermediateOrganization = org
 	cfg.IntermediateCountry = country
-	cfg.IntermediateValidityYears = caYears
+	cfg.IntermediateValidityYears = intermediateYears
 	cfg.IntermediatePassphraseSet = passphrase != ""
 	return a.saveConfig(cfg)
 }
@@ -933,11 +1131,83 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		ValidityYears: years,
 		CreatedAt:     now,
 	}
+	return a.saveCertMetadata(certDir, meta)
+}
+
+func (a *app) loadCertMetadata(certDir string) (certMetadata, error) {
+	metaJSON, err := os.ReadFile(filepath.Join(certDir, "metadata.json"))
+	if err != nil {
+		return certMetadata{}, err
+	}
+	var meta certMetadata
+	if err := json.Unmarshal(metaJSON, &meta); err != nil {
+		return certMetadata{}, err
+	}
+	return meta, nil
+}
+
+func (a *app) saveCertMetadata(certDir string, meta certMetadata) error {
 	metaJSON, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(certDir, "metadata.json"), metaJSON, 0o640)
+}
+
+func (a *app) changeCAPassphrase(currentPassphrase, newPassphrase string) error {
+	if err := updatePrivateKeyPassphrase(
+		filepath.Join(a.dataDir, "ca-key.pem"),
+		currentPassphrase,
+		newPassphrase,
+		"passphrase CA richiesta",
+		"passphrase CA non valida",
+	); err != nil {
+		return err
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	if !has {
+		return errors.New("configurazione CA non trovata")
+	}
+	cfg.CAPassphraseSet = newPassphrase != ""
+	return a.saveConfig(cfg)
+}
+
+func (a *app) changeIntermediatePassphrase(currentPassphrase, newPassphrase string) error {
+	if err := updatePrivateKeyPassphrase(
+		filepath.Join(a.dataDir, "intermediate-key.pem"),
+		currentPassphrase,
+		newPassphrase,
+		"passphrase intermedia richiesta",
+		"passphrase intermedia non valida",
+	); err != nil {
+		return err
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	if !has {
+		return errors.New("configurazione CA non trovata")
+	}
+	cfg.IntermediatePassphraseSet = newPassphrase != ""
+	return a.saveConfig(cfg)
+}
+
+func (a *app) changeCertificatePassphrase(id, currentPassphrase, newPassphrase string) error {
+	certDir, _, err := a.resolveCertificateDir(id)
+	if err != nil {
+		return errors.New("id certificato non valido")
+	}
+	return updatePrivateKeyPassphrase(
+		filepath.Join(certDir, "key.pem"),
+		currentPassphrase,
+		newPassphrase,
+		"passphrase certificato richiesta",
+		"passphrase certificato non valida",
+	)
 }
 
 func (a *app) loadConfig() (config, bool, error) {
