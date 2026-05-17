@@ -521,8 +521,6 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 		return filepath.Join(a.dataDir, "ca-key.pem"), "ca-key.pem", "application/x-pem-file", nil
 	case "intermediate-cert-pem":
 		return filepath.Join(a.dataDir, "intermediate-cert.pem"), "intermediate-cert.pem", "application/x-pem-file", nil
-	case "intermediate-key-pem":
-		return filepath.Join(a.dataDir, "intermediate-key.pem"), "intermediate-key.pem", "application/x-pem-file", nil
 	case "intermediate-chain-pem":
 		return filepath.Join(a.dataDir, "intermediate-chain.pem"), "intermediate-chain.pem", "application/x-pem-file", nil
 	case "csr-pem":

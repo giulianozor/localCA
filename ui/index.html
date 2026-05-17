@@ -68,7 +68,7 @@
              <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.IntermediateOrganization}}<br>
              <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.IntermediateCountry}}<br>
              <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.IntermediateValidityYears}}</p>
-          <p>{{index .T "export.label"}}: <a href="/download?kind=intermediate-cert-pem">Intermediate cert PEM</a> · <a href="/download?kind=intermediate-key-pem">Intermediate key PEM</a> · <a href="/download?kind=intermediate-chain-pem">Intermediate chain PEM</a></p>
+          <p>{{index .T "export.label"}}: <a href="/download?kind=intermediate-cert-pem">Intermediate cert PEM</a> · <a href="/download?kind=intermediate-chain-pem">Intermediate chain PEM</a></p>
         </div>
       {{end}}
 
