@@ -34,6 +34,7 @@ const (
 	caYears             = 100
 	maxCertValidityYear = 30
 	defaultLanguage     = "en"
+	certNotBeforeOffset = -1 * time.Hour
 )
 
 type app struct {
@@ -719,7 +720,7 @@ func (a *app) createCA(cn, org, country, passphrase string) error {
 			Organization: []string{org},
 			Country:      []string{country},
 		},
-		NotBefore:             now.Add(-1 * time.Hour),
+		NotBefore:             now.Add(certNotBeforeOffset),
 		NotAfter:              now.AddDate(caYears, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
@@ -791,7 +792,7 @@ func (a *app) createIntermediateCA(cn, org, country, caPassphrase, passphrase st
 			Organization: []string{org},
 			Country:      []string{country},
 		},
-		NotBefore:             now.Add(-1 * time.Hour),
+		NotBefore:             now.Add(certNotBeforeOffset),
 		NotAfter:              now.AddDate(caYears, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
@@ -884,7 +885,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		Subject: pkix.Name{
 			CommonName: commonName,
 		},
-		NotBefore:   now.Add(-1 * time.Hour),
+		NotBefore:   now.Add(certNotBeforeOffset),
 		NotAfter:    now.AddDate(years, 0, 0),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
@@ -1049,16 +1050,19 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 	} else {
 		files["key.pem"] = keyPEM
 	}
-	var issuerChain []byte
+	keyFiles := map[string]struct{}{
+		"key.pem": {},
+	}
 	if hasIntermediate {
 		files["intermediate-cert.pem"] = intermediateCertPEM
-		issuerChain = append(append([]byte(nil), intermediateCertPEM...), caCertPEM...)
+		issuerChain := append([]byte(nil), intermediateCertPEM...)
+		issuerChain = append(issuerChain, caCertPEM...)
 		files["issuer-chain.pem"] = issuerChain
 	} else {
-		issuerChain = append([]byte(nil), caCertPEM...)
-		files["issuer-chain.pem"] = issuerChain
+		files["issuer-chain.pem"] = append([]byte(nil), caCertPEM...)
 	}
-	certChain := append(append([]byte(nil), certPEM...), issuerChain...)
+	certChain := append([]byte(nil), certPEM...)
+	certChain = append(certChain, files["issuer-chain.pem"]...)
 	files["chain.pem"] = certChain
 
 	for name, content := range files {
@@ -1067,7 +1071,7 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 			Mode: 0o640,
 			Size: int64(len(content)),
 		}
-		if strings.HasPrefix(name, "key") {
+		if _, ok := keyFiles[name]; ok {
 			header.Mode = 0o600
 		}
 		if err := tarWriter.WriteHeader(header); err != nil {
