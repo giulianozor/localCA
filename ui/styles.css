@@ -1,4 +1,4 @@
-:root { color-scheme: dark; }
+:root { color-scheme: dark; --cert-actions-password-width: 9rem; }
 body { background: #111827; color: #e5e7eb; font-family: Inter, system-ui, sans-serif; margin: 0; }
 .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
 .topbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
@@ -16,8 +16,9 @@ a { color: #93c5fd; }
 .lang-form { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
 .lang-form label { margin-top: 0; white-space: nowrap; }
 .lang-form select { width: auto; min-width: 110px; margin-top: 0; padding: 6px 8px; }
-.inline-form { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; margin-bottom: 6px; }
-.inline-form button { margin-top: 0; padding: 6px 10px; }
+.inline-form { display: inline; }
 .cert-actions { white-space: nowrap; }
-.cert-actions .inline-form input[type="password"] { width: 9rem; }
+.cert-actions .inline-form { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; margin-bottom: 6px; }
+.cert-actions .inline-form button { margin-top: 0; padding: 6px 10px; }
+.cert-actions .inline-form input[type="password"] { width: var(--cert-actions-password-width); }
 .danger { background: #b91c1c; margin-top: 0; padding: 6px 10px; }
