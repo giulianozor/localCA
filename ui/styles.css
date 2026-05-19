@@ -16,5 +16,8 @@ a { color: #93c5fd; }
 .lang-form { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
 .lang-form label { margin-top: 0; white-space: nowrap; }
 .lang-form select { width: auto; min-width: 110px; margin-top: 0; padding: 6px 8px; }
-.inline-form { display: inline; }
+.inline-form { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; margin-bottom: 6px; }
+.inline-form button { margin-top: 0; padding: 6px 10px; }
+.cert-actions { white-space: nowrap; }
+.cert-actions .inline-form input[type="password"] { width: 9rem; }
 .danger { background: #b91c1c; margin-top: 0; padding: 6px 10px; }

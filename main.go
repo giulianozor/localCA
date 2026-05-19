@@ -34,7 +34,7 @@ const (
 	caYears                  = 100
 	intermediateYears        = 30
 	maxCertValidityYear      = 30
-	defaultCertValidityYears = 10
+	defaultCertValidityYears = 2
 	defaultLanguage          = "en"
 	certNotBeforeOffset      = -1 * time.Hour
 	crlNextUpdateDays        = 7
