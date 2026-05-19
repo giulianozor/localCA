@@ -122,7 +122,7 @@
                 <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
                 <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
                 <td>{{if .RevokedAt}}{{index $.T "cert.status.revoked"}}{{else}}{{index $.T "cert.status.active"}}{{end}}</td>
-                <td>
+                <td class="cert-actions">
                   <form class="inline-form" method="get" action="/download">
                     <input type="hidden" name="kind" value="all-tar-gz">
                     <input type="hidden" name="id" value="{{.ID}}">
