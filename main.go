@@ -76,8 +76,8 @@ type certMetadata struct {
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
 }
 
-func (c config) signerPassphraseRequired() bool {
-	if c.HasIntermediate {
+func (c config) signerPassphraseRequired(hasIntermediate bool) bool {
+	if hasIntermediate {
 		return c.IntermediatePassphraseSet
 	}
 	return c.CAPassphraseSet
@@ -145,8 +145,8 @@ func main() {
 func parseArgs(args []string) (string, int, string, error) {
 	fs := flag.NewFlagSet("localCA", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	port := fs.Int("port", 8080, "porta HTTP del server web")
-	lang := fs.String("lang", defaultLanguage, "lingua UI (en|it|ja)")
+	port := fs.Int("port", 8080, "HTTP port for the web server")
+	lang := fs.String("lang", defaultLanguage, "UI language (en|it|ja)")
 	if err := fs.Parse(args); err != nil {
 		return "", 0, "", err
 	}
@@ -281,14 +281,15 @@ func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg st
 		Error:                    errMsg,
 		DefaultCertYears:         defaultCertValidityYears,
 		MaxCertYears:             maxCertValidityYear,
-		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(),
+		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(a.hasIntermediate()),
 		Lang:                     lang,
 		T:                        a.translations[lang],
 	}
 
-	tmpl := template.Must(template.New("index").Parse(indexHTML))
-	if err := tmpl.Execute(w, data); err != nil {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := indexTemplate.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -314,7 +315,7 @@ func (a *app) handleCertTable(w http.ResponseWriter, r *http.Request) {
 	certs = filterCertificates(certs, r.URL.Query().Get("q"))
 	data := pageData{
 		Certificates:             certs,
-		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(),
+		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(a.hasIntermediate()),
 		T:                        a.translations[lang],
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -379,7 +380,7 @@ func (a *app) handleCreateIntermediate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
-	if cfg.HasIntermediate && a.hasIntermediate() {
+	if a.hasIntermediate() {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.intermediate_already_exists")), http.StatusSeeOther)
 		return
 	}
@@ -736,7 +737,7 @@ func (a *app) handleGenerateCRL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
-	if cfg.signerPassphraseRequired() && signerPassphrase == "" {
+	if cfg.signerPassphraseRequired(a.hasIntermediate()) && signerPassphrase == "" {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
@@ -775,7 +776,7 @@ func (a *app) handleRenewCert(w http.ResponseWriter, r *http.Request) {
 	}
 	keyPassphrase := strings.TrimSpace(r.FormValue("key_passphrase"))
 	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
-	if cfg.signerPassphraseRequired() && signerPassphrase == "" {
+	if cfg.signerPassphraseRequired(a.hasIntermediate()) && signerPassphrase == "" {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
@@ -888,7 +889,7 @@ func (a *app) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	f, err := os.Open(path)
 	if err != nil {
-		http.Error(w, "file non trovato", http.StatusNotFound)
+		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}
 	defer f.Close()
@@ -921,7 +922,7 @@ func (a *app) resolveDownload(kind, id string) (string, string, string, error) {
 		}
 		return filepath.Join(base, "csr.pem"), safeID + "-csr.pem", "application/x-pem-file", nil
 	default:
-		return "", "", "", errors.New("tipo download non supportato")
+		return "", "", "", errors.New("unsupported download type")
 	}
 }
 
@@ -945,18 +946,18 @@ func handleAppJS(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) resolveCertificateDir(id string) (string, string, error) {
 	if id == "" {
-		return "", "", errors.New("id certificato mancante")
+		return "", "", errors.New("missing certificate ID")
 	}
 	entries, err := os.ReadDir(filepath.Join(a.dataDir, "certs"))
 	if err != nil {
-		return "", "", errors.New("archivio certificati non disponibile")
+		return "", "", errors.New("certificate archive not available")
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && entry.Name() == id {
 			return filepath.Join(a.dataDir, "certs", entry.Name()), entry.Name(), nil
 		}
 	}
-	return "", "", errors.New("id certificato non valido")
+	return "", "", errors.New("invalid certificate ID")
 }
 
 func parseValidityYears(raw string) (int, error) {
@@ -966,10 +967,10 @@ func parseValidityYears(raw string) (int, error) {
 	}
 	years, err := strconv.Atoi(raw)
 	if err != nil {
-		return 0, errors.New("validita non valida")
+		return 0, errors.New("invalid validity value")
 	}
 	if years < 1 || years > maxCertValidityYear {
-		return 0, fmt.Errorf("la validita deve essere tra 1 e %d anni", maxCertValidityYear)
+		return 0, fmt.Errorf("validity must be between 1 and %d years", maxCertValidityYear)
 	}
 	return years, nil
 }
@@ -990,7 +991,7 @@ func parseSANs(input string) ([]string, error) {
 		result = append(result, v)
 	}
 	if len(result) == 0 {
-		return nil, errors.New("inserire almeno un SAN (FQDN, IP o host)")
+		return nil, errors.New("enter at least one SAN (FQDN, IP, or hostname)")
 	}
 	return result, nil
 }
@@ -1072,7 +1073,7 @@ func parsePrivateKeyPEM(keyPEM []byte, passphrase, missingErr, invalidErr string
 func parseUnencryptedPrivateKeyPEM(keyPEM []byte) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode(keyPEM)
 	if block == nil || x509.IsEncryptedPEMBlock(block) {
-		return nil, errors.New("private key not directly readable")
+		return nil, errors.New("private key is encrypted or invalid")
 	}
 	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
 		return key, nil
@@ -1171,11 +1172,11 @@ func (a *app) createCA(cn, org, country, passphrase string) error {
 func (a *app) createIntermediateCA(cn, org, country, caPassphrase, passphrase string) error {
 	caCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
 	if err != nil {
-		return errors.New("ca non trovata")
+		return errors.New("CA certificate not found")
 	}
 	caBlock, _ := pem.Decode(caCertPEM)
 	if caBlock == nil {
-		return errors.New("ca-cert.pem non valido")
+		return errors.New("invalid CA certificate PEM")
 	}
 	caCert, err := x509.ParseCertificate(caBlock.Bytes)
 	if err != nil {
@@ -1183,9 +1184,9 @@ func (a *app) createIntermediateCA(cn, org, country, caPassphrase, passphrase st
 	}
 	caKeyPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-key.pem"))
 	if err != nil {
-		return errors.New("chiave CA non trovata")
+		return errors.New("CA key not found")
 	}
-	caKey, err := parsePrivateKeyPEM(caKeyPEM, caPassphrase, "passphrase CA richiesta", "passphrase CA non valida")
+	caKey, err := parsePrivateKeyPEM(caKeyPEM, caPassphrase, "CA passphrase required", "invalid CA passphrase")
 	if err != nil {
 		return err
 	}
@@ -1234,7 +1235,7 @@ func (a *app) createIntermediateCA(cn, org, country, caPassphrase, passphrase st
 		return err
 	}
 	if !has {
-		return errors.New("configurazione CA non trovata")
+		return errors.New("CA configuration not found")
 	}
 	cfg.HasIntermediate = true
 	cfg.IntermediateCommonName = cn
@@ -1373,21 +1374,21 @@ func (a *app) renewIntermediateCA(caPassphrase string) error {
 func (a *app) createServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string, useIntermediate bool) error {
 	signerCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
 	if err != nil {
-		return errors.New("ca non trovata")
+		return errors.New("CA certificate not found")
 	}
 	signerName := "CA"
 	signerKeyPath := filepath.Join(a.dataDir, "ca-key.pem")
 	if useIntermediate {
 		signerCertPEM, err = os.ReadFile(filepath.Join(a.dataDir, "intermediate-cert.pem"))
 		if err != nil {
-			return errors.New("intermediate-cert.pem non trovato")
+			return errors.New("intermediate certificate not found")
 		}
-		signerName = "intermedia"
+		signerName = "intermediate"
 		signerKeyPath = filepath.Join(a.dataDir, "intermediate-key.pem")
 	}
 	signerBlock, _ := pem.Decode(signerCertPEM)
 	if signerBlock == nil {
-		return fmt.Errorf("certificato %s non valido", signerName)
+		return fmt.Errorf("invalid %s certificate PEM", signerName)
 	}
 	signerCert, err := x509.ParseCertificate(signerBlock.Bytes)
 	if err != nil {
@@ -1396,13 +1397,13 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 
 	signerKeyPEM, err := os.ReadFile(signerKeyPath)
 	if err != nil {
-		return fmt.Errorf("chiave %s non trovata", signerName)
+		return fmt.Errorf("%s key not found", signerName)
 	}
 	signerKey, err := parsePrivateKeyPEM(
 		signerKeyPEM,
 		signerPassphrase,
-		fmt.Sprintf("passphrase %s richiesta", signerName),
-		fmt.Sprintf("passphrase %s non valida", signerName),
+		fmt.Sprintf("%s passphrase required", signerName),
+		fmt.Sprintf("invalid %s passphrase", signerName),
 	)
 	if err != nil {
 		return err
@@ -1705,19 +1706,6 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 	return nil
 }
 
-func addFileToTar(tarWriter *tar.Writer, path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open archive file %s: %w", path, err)
-	}
-	defer file.Close()
-
-	if _, err := io.Copy(tarWriter, file); err != nil {
-		return fmt.Errorf("copy archive file %s: %w", path, err)
-	}
-	return nil
-}
-
 //go:embed ui/index.html
 var indexHTML string
 
@@ -1734,3 +1722,4 @@ var certTableRowsHTML string
 var embeddedI18n embed.FS
 
 var certTableRowsTemplate = template.Must(template.New("cert-table-rows").Parse(certTableRowsHTML))
+var indexTemplate = template.Must(template.New("index").Parse(indexHTML))
