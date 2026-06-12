@@ -1,2 +1,3 @@
 git pull
-go build .
+make test
+make build

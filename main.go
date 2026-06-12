@@ -120,7 +120,9 @@ func main() {
 	mux.HandleFunc("/lang", a.handleSetLanguage)
 	mux.HandleFunc("/ca/create", a.handleCreateCA)
 	mux.HandleFunc("/ca/passphrase", a.handleChangeCAPassphrase)
+	mux.HandleFunc("/ca/renew", a.handleRenewCA)
 	mux.HandleFunc("/intermediate/create", a.handleCreateIntermediate)
+	mux.HandleFunc("/intermediate/renew", a.handleRenewIntermediate)
 	mux.HandleFunc("/intermediate/passphrase", a.handleChangeIntermediatePassphrase)
 	mux.HandleFunc("/certs/create", a.handleCreateCert)
 	mux.HandleFunc("/certs/passphrase", a.handleChangeCertPassphrase)
@@ -516,14 +518,22 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keyPassphrase := strings.TrimSpace(r.FormValue("key_passphrase"))
+
+	signer := r.FormValue("signer")
+	useIntermediate := a.hasIntermediate() && signer != "ca"
+	var requiresSignerPassphrase bool
+	if useIntermediate {
+		requiresSignerPassphrase = cfg.IntermediatePassphraseSet
+	} else {
+		requiresSignerPassphrase = cfg.CAPassphraseSet
+	}
 	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
-	requiresSignerPassphrase := cfg.signerPassphraseRequired()
 	if requiresSignerPassphrase && signerPassphrase == "" {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
 
-	if err := a.createServerCert(commonName, sans, years, keyPassphrase, signerPassphrase); err != nil {
+	if err := a.createServerCert(commonName, sans, years, keyPassphrase, signerPassphrase, useIntermediate); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -769,7 +779,7 @@ func (a *app) handleRenewCert(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase); err != nil {
+	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, a.hasIntermediate()); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -782,6 +792,72 @@ func (a *app) handleRenewCert(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_renewed"), safeID)), http.StatusSeeOther)
+}
+
+func (a *app) handleRenewCA(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	caPassphrase := strings.TrimSpace(r.FormValue("ca_passphrase"))
+	if cfg.CAPassphraseSet && caPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
+		return
+	}
+	if err := a.renewCA(caPassphrase); err != nil {
+		if errors.Is(err, errCAConfigNotFound) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.ca_renewed")), http.StatusSeeOther)
+}
+
+func (a *app) handleRenewIntermediate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lang := a.currentLanguage(cfg, has)
+	if !has {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		return
+	}
+	if !a.hasIntermediate() {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_intermediate_first")), http.StatusSeeOther)
+		return
+	}
+	caPassphrase := strings.TrimSpace(r.FormValue("ca_passphrase"))
+	if cfg.CAPassphraseSet && caPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
+		return
+	}
+	if err := a.renewIntermediateCA(caPassphrase); err != nil {
+		if errors.Is(err, errCAConfigNotFound) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.intermediate_renewed")), http.StatusSeeOther)
 }
 
 func (a *app) handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -914,7 +990,7 @@ func parseSANs(input string) ([]string, error) {
 		result = append(result, v)
 	}
 	if len(result) == 0 {
-		return nil, errors.New("inserire almeno un SAN (FQDN, IP o host .local/.locsl)")
+		return nil, errors.New("inserire almeno un SAN (FQDN, IP o host)")
 	}
 	return result, nil
 }
@@ -1169,14 +1245,139 @@ func (a *app) createIntermediateCA(cn, org, country, caPassphrase, passphrase st
 	return a.saveConfig(cfg)
 }
 
-func (a *app) createServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string) error {
+func (a *app) renewCA(caPassphrase string) error {
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	if !has {
+		return errCAConfigNotFound
+	}
+
+	caKeyPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-key.pem"))
+	if err != nil {
+		return errors.New("CA key not found")
+	}
+	caKey, err := parsePrivateKeyPEM(caKeyPEM, caPassphrase, "CA passphrase required", "invalid CA passphrase")
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(now.UnixNano()),
+		Subject: pkix.Name{
+			CommonName:   cfg.CACommonName,
+			Organization: []string{cfg.Organization},
+			Country:      []string{cfg.Country},
+		},
+		NotBefore:             now.Add(certNotBeforeOffset),
+		NotAfter:              now.AddDate(caYears, 0, 0),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &caKey.PublicKey, caKey)
+	if err != nil {
+		return err
+	}
+
+	if err := writePEM(filepath.Join(a.dataDir, "ca-cert.pem"), "CERTIFICATE", der, 0o640); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(a.dataDir, "ca-cert.der"), der, 0o640); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *app) renewIntermediateCA(caPassphrase string) error {
+	cfg, has, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	if !has {
+		return errCAConfigNotFound
+	}
+	if !a.hasIntermediate() {
+		return errors.New("no intermediate certificate to renew")
+	}
+
+	caCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
+	if err != nil {
+		return errors.New("CA certificate not found")
+	}
+	caBlock, _ := pem.Decode(caCertPEM)
+	if caBlock == nil {
+		return errors.New("invalid CA certificate")
+	}
+	caCert, err := x509.ParseCertificate(caBlock.Bytes)
+	if err != nil {
+		return err
+	}
+
+	caKeyPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-key.pem"))
+	if err != nil {
+		return errors.New("CA key not found")
+	}
+	caKey, err := parsePrivateKeyPEM(caKeyPEM, caPassphrase, "CA passphrase required", "invalid CA passphrase")
+	if err != nil {
+		return err
+	}
+
+	intCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "intermediate-cert.pem"))
+	if err != nil {
+		return errors.New("intermediate certificate not found")
+	}
+	intBlock, _ := pem.Decode(intCertPEM)
+	if intBlock == nil {
+		return errors.New("invalid intermediate certificate")
+	}
+	intCert, err := x509.ParseCertificate(intBlock.Bytes)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(now.UnixNano()),
+		Subject: pkix.Name{
+			CommonName:   cfg.IntermediateCommonName,
+			Organization: []string{cfg.IntermediateOrganization},
+			Country:      []string{cfg.IntermediateCountry},
+		},
+		NotBefore:             now.Add(certNotBeforeOffset),
+		NotAfter:              now.AddDate(intermediateYears, 0, 0),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            0,
+		MaxPathLenZero:        true,
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, intCert.PublicKey, caKey)
+	if err != nil {
+		return err
+	}
+
+	if err := writePEM(filepath.Join(a.dataDir, "intermediate-cert.pem"), "CERTIFICATE", certDER, 0o640); err != nil {
+		return err
+	}
+	chain := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	chain = append(chain, caCertPEM...)
+	if err := os.WriteFile(filepath.Join(a.dataDir, "intermediate-chain.pem"), chain, 0o640); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *app) createServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string, useIntermediate bool) error {
 	signerCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
 	if err != nil {
 		return errors.New("ca non trovata")
 	}
 	signerName := "CA"
 	signerKeyPath := filepath.Join(a.dataDir, "ca-key.pem")
-	if a.hasIntermediate() {
+	if useIntermediate {
 		signerCertPEM, err = os.ReadFile(filepath.Join(a.dataDir, "intermediate-cert.pem"))
 		if err != nil {
 			return errors.New("intermediate-cert.pem non trovato")

@@ -47,7 +47,7 @@ func TestParseValidityYears(t *testing.T) {
 
 func TestParseSANs(t *testing.T) {
 	t.Run("valid and deduplicated", func(t *testing.T) {
-		got, err := parseSANs("Dev.Local, 127.0.0.1, dev.local, api.locsl")
+		got, err := parseSANs("Dev.Local, 127.0.0.1, other.local")
 		if err != nil {
 			t.Fatalf("parseSANs() error = %v", err)
 		}
@@ -160,7 +160,7 @@ func TestLoadTranslationsUsesEmbeddedAssets(t *testing.T) {
 func TestFilterCertificates(t *testing.T) {
 	certs := []certMetadata{
 		{ID: "cert-1", CommonName: "dev.local", SANs: []string{"dev.local", "127.0.0.1"}, CreatedAt: time.Now()},
-		{ID: "cert-2", CommonName: "api.locsl", SANs: []string{"api.locsl"}, CreatedAt: time.Now()},
+		{ID: "cert-2", CommonName: "api.local", SANs: []string{"api.local"}, CreatedAt: time.Now()},
 	}
 
 	t.Run("empty query returns all", func(t *testing.T) {
@@ -288,7 +288,7 @@ func TestCreateServerCertUsesIntermediateAsIssuer(t *testing.T) {
 	if err := a.createIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
 		t.Fatalf("createIntermediateCA() error = %v", err)
 	}
-	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", ""); err != nil {
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "", a.hasIntermediate()); err != nil {
 		t.Fatalf("createServerCert() error = %v", err)
 	}
 	certs, err := a.listCerts()
@@ -314,10 +314,10 @@ func TestCreateServerCertRequiresSignerPassphrase(t *testing.T) {
 	if err := a.createCA("Test Root", "localCA", "IT", "root-pass"); err != nil {
 		t.Fatalf("createCA() error = %v", err)
 	}
-	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", ""); err == nil {
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "", a.hasIntermediate()); err == nil {
 		t.Fatal("createServerCert() expected error when signer passphrase is missing")
 	}
-	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "root-pass"); err != nil {
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "root-pass", a.hasIntermediate()); err != nil {
 		t.Fatalf("createServerCert() with signer passphrase error = %v", err)
 	}
 }
@@ -358,13 +358,13 @@ func TestChangeCAPassphraseSetAndRemove(t *testing.T) {
 	if err := a.changeCAPassphrase("initial-pass", "new-pass"); err != nil {
 		t.Fatalf("changeCAPassphrase(set) error = %v", err)
 	}
-	if err := a.createServerCert("with-new-pass.local", []string{"with-new-pass.local"}, 1, "", "new-pass"); err != nil {
+	if err := a.createServerCert("with-new-pass.local", []string{"with-new-pass.local"}, 1, "", "new-pass", a.hasIntermediate()); err != nil {
 		t.Fatalf("createServerCert() with new signer passphrase error = %v", err)
 	}
 	if err := a.changeCAPassphrase("new-pass", ""); err != nil {
 		t.Fatalf("changeCAPassphrase(remove) error = %v", err)
 	}
-	if err := a.createServerCert("without-pass.local", []string{"without-pass.local"}, 1, "", ""); err != nil {
+	if err := a.createServerCert("without-pass.local", []string{"without-pass.local"}, 1, "", "", a.hasIntermediate()); err != nil {
 		t.Fatalf("createServerCert() without signer passphrase error = %v", err)
 	}
 }
@@ -416,7 +416,7 @@ func TestHandleDownloadArchiveRejectsExportPassphraseForEncryptedKey(t *testing.
 	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
 		t.Fatalf("createCA() error = %v", err)
 	}
-	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "leaf-pass", ""); err != nil {
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "leaf-pass", "", a.hasIntermediate()); err != nil {
 		t.Fatalf("createServerCert() error = %v", err)
 	}
 	certs, err := a.listCerts()
@@ -448,7 +448,7 @@ func createTestCertificate(t *testing.T) (*app, string) {
 		"192.168.1.100",
 		"10.0.0.50",
 		"127.0.0.1",
-	}, 1, "", ""); err != nil {
+	}, 1, "", "", a.hasIntermediate()); err != nil {
 		t.Fatalf("createServerCert() error = %v", err)
 	}
 	certs, err := a.listCerts()
@@ -608,5 +608,266 @@ func TestHandleGenerateCRL(t *testing.T) {
 	}
 	if dlRR.Header().Get("Content-Type") != "application/x-pem-file" {
 		t.Fatalf("handleDownload(crl-pem) Content-Type = %s", dlRR.Header().Get("Content-Type"))
+	}
+}
+
+func TestRenewCASameSubjectNewSerial(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	origCert := parseCertificatePEM(t, filepath.Join(tempDir, "ca-cert.pem"))
+
+	if err := a.renewCA(""); err != nil {
+		t.Fatalf("renewCA() error = %v", err)
+	}
+
+	newCert := parseCertificatePEM(t, filepath.Join(tempDir, "ca-cert.pem"))
+	if newCert.SerialNumber.Cmp(origCert.SerialNumber) == 0 {
+		t.Fatal("renewCA() serial should change")
+	}
+	if newCert.Subject.CommonName != origCert.Subject.CommonName {
+		t.Fatalf("renewCA() CN = %q, want %q", newCert.Subject.CommonName, origCert.Subject.CommonName)
+	}
+	if newCert.NotAfter.Before(time.Now().AddDate(caYears-1, 0, 0)) {
+		t.Fatal("renewCA() validity too short")
+	}
+	if !newCert.IsCA {
+		t.Fatal("renewCA() cert should have CA flag")
+	}
+}
+
+func TestRenewCAWithPassphrase(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", "secret"); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.renewCA("secret"); err != nil {
+		t.Fatalf("renewCA() with passphrase error = %v", err)
+	}
+	if err := a.renewCA(""); err == nil {
+		t.Fatal("renewCA() expected error with missing passphrase")
+	}
+}
+
+func TestRenewIntermediateCAWithoutIntermediateFails(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.renewIntermediateCA(""); err == nil {
+		t.Fatal("renewIntermediateCA() expected error when no intermediate exists")
+	}
+}
+
+func TestCAIntermediateAndSignerChoice(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en"}
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.createIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
+		t.Fatalf("createIntermediateCA() error = %v", err)
+	}
+
+	t.Run("renew intermediate creates new cert signed by CA", func(t *testing.T) {
+		origInt := parseCertificatePEM(t, filepath.Join(tempDir, "intermediate-cert.pem"))
+
+		if err := a.renewIntermediateCA(""); err != nil {
+			t.Fatalf("renewIntermediateCA() error = %v", err)
+		}
+
+		newInt := parseCertificatePEM(t, filepath.Join(tempDir, "intermediate-cert.pem"))
+		if newInt.SerialNumber.Cmp(origInt.SerialNumber) == 0 {
+			t.Fatal("serial should change")
+		}
+		if newInt.Subject.CommonName != origInt.Subject.CommonName {
+			t.Fatalf("CN = %q, want %q", newInt.Subject.CommonName, origInt.Subject.CommonName)
+		}
+		if newInt.Issuer.CommonName != "Test Root" {
+			t.Fatalf("issuer = %q, want 'Test Root'", newInt.Issuer.CommonName)
+		}
+		if !newInt.IsCA {
+			t.Fatal("cert should have CA flag")
+		}
+
+		chainPEM, err := os.ReadFile(filepath.Join(tempDir, "intermediate-chain.pem"))
+		if err != nil {
+			t.Fatalf("read intermediate-chain.pem: %v", err)
+		}
+		block, _ := pem.Decode(chainPEM)
+		if block == nil {
+			t.Fatal("intermediate-chain.pem has no first block")
+		}
+		chainInt, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatalf("parse first chain cert: %v", err)
+		}
+		if chainInt.SerialNumber.Cmp(newInt.SerialNumber) != 0 {
+			t.Fatal("intermediate-chain.pem first cert serial does not match renewed cert")
+		}
+	})
+
+	t.Run("signer choice: false signs with CA, true signs with intermediate", func(t *testing.T) {
+		if err := a.createServerCert("ca-signed.local", []string{"ca-signed.local"}, 1, "", "", false); err != nil {
+			t.Fatalf("createServerCert(useIntermediate=false) error = %v", err)
+		}
+		if err := a.createServerCert("int-signed.local", []string{"int-signed.local"}, 1, "", "", true); err != nil {
+			t.Fatalf("createServerCert(useIntermediate=true) error = %v", err)
+		}
+
+		certs, err := a.listCerts()
+		if err != nil {
+			t.Fatalf("listCerts() error = %v", err)
+		}
+		if len(certs) != 2 {
+			t.Fatalf("listCerts() len = %d, want 2", len(certs))
+		}
+
+		caCert := parseCertificatePEM(t, filepath.Join(tempDir, "ca-cert.pem"))
+		intCert := parseCertificatePEM(t, filepath.Join(tempDir, "intermediate-cert.pem"))
+
+		for _, meta := range certs {
+			cert := parseCertificatePEM(t, filepath.Join(tempDir, "certs", meta.ID, "cert.pem"))
+			switch meta.CommonName {
+			case "ca-signed.local":
+				if cert.Issuer.CommonName != caCert.Subject.CommonName {
+					t.Fatalf("ca-signed.local issuer = %q, want %q", cert.Issuer.CommonName, caCert.Subject.CommonName)
+				}
+			case "int-signed.local":
+				if cert.Issuer.CommonName != intCert.Subject.CommonName {
+					t.Fatalf("int-signed.local issuer = %q, want %q", cert.Issuer.CommonName, intCert.Subject.CommonName)
+				}
+			}
+		}
+	})
+}
+
+func TestHandleRenewCAHandler(t *testing.T) {
+	translations, err := loadTranslations()
+	if err != nil {
+		t.Fatalf("loadTranslations() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en", translations: translations}
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+
+	form := url.Values{}
+	req := httptest.NewRequest(http.MethodPost, "/ca/renew", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	a.handleRenewCA(rr, req)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("handleRenewCA() status = %d, want %d", rr.Code, http.StatusSeeOther)
+	}
+	if !strings.Contains(rr.Header().Get("Location"), "msg=") {
+		t.Fatalf("handleRenewCA() expected success redirect, got %s", rr.Header().Get("Location"))
+	}
+}
+
+func TestHandleRenewIntermediateHandler(t *testing.T) {
+	translations, err := loadTranslations()
+	if err != nil {
+		t.Fatalf("loadTranslations() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en", translations: translations}
+	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.createIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
+		t.Fatalf("createIntermediateCA() error = %v", err)
+	}
+
+	form := url.Values{}
+	req := httptest.NewRequest(http.MethodPost, "/intermediate/renew", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	a.handleRenewIntermediate(rr, req)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("handleRenewIntermediate() status = %d, want %d", rr.Code, http.StatusSeeOther)
+	}
+	if !strings.Contains(rr.Header().Get("Location"), "msg=") {
+		t.Fatalf("handleRenewIntermediate() expected success redirect, got %s", rr.Header().Get("Location"))
+	}
+}
+
+func TestHandleRenewCARequiresPassphrase(t *testing.T) {
+	translations, err := loadTranslations()
+	if err != nil {
+		t.Fatalf("loadTranslations() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en", translations: translations}
+	if err := a.createCA("Test Root", "localCA", "IT", "secret"); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+
+	form := url.Values{}
+	req := httptest.NewRequest(http.MethodPost, "/ca/renew", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	a.handleRenewCA(rr, req)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("handleRenewCA() status = %d, want %d", rr.Code, http.StatusSeeOther)
+	}
+	if !strings.Contains(rr.Header().Get("Location"), "err=") {
+		t.Fatalf("handleRenewCA() expected error redirect when passphrase missing, got %s", rr.Header().Get("Location"))
+	}
+}
+
+func TestHandleRenewIntermediateRequiresPassphrase(t *testing.T) {
+	translations, err := loadTranslations()
+	if err != nil {
+		t.Fatalf("loadTranslations() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &app{dataDir: tempDir, defaultLang: "en", translations: translations}
+	if err := a.createCA("Test Root", "localCA", "IT", "secret"); err != nil {
+		t.Fatalf("createCA() error = %v", err)
+	}
+	if err := a.createIntermediateCA("Test Intermediate", "localCA", "IT", "secret", ""); err != nil {
+		t.Fatalf("createIntermediateCA() error = %v", err)
+	}
+
+	form := url.Values{}
+	req := httptest.NewRequest(http.MethodPost, "/intermediate/renew", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	a.handleRenewIntermediate(rr, req)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("handleRenewIntermediate() status = %d, want %d", rr.Code, http.StatusSeeOther)
+	}
+	if !strings.Contains(rr.Header().Get("Location"), "err=") {
+		t.Fatalf("handleRenewIntermediate() expected error redirect when passphrase missing, got %s", rr.Header().Get("Location"))
 	}
 }

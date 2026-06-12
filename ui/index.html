@@ -8,160 +8,340 @@
   <script defer src="/static/app.js"></script>
 </head>
 <body>
-  <div class="container">
+  <a href="#main-content" class="skip-link">{{index .T "skip_to_content"}}</a>
+  <div class="container" id="main-content">
     <div class="topbar">
       <form class="lang-form" method="post" action="/lang">
         <label for="lang-select">{{index .T "language.label"}}</label>
-        <select id="lang-select" class="js-lang-select" name="lang">
-          <option value="en" {{if eq .Lang "en"}}selected{{end}}>{{index .T "language.en"}}</option>
-          <option value="it" {{if eq .Lang "it"}}selected{{end}}>{{index .T "language.it"}}</option>
-          <option value="ja" {{if eq .Lang "ja"}}selected{{end}}>{{index .T "language.ja"}}</option>
+        <select id="lang-select" class="js-lang-select" name="lang" aria-label="{{index .T "language.label"}}">
+          <option value="en" {{if eq .Lang "en"}}selected{{end}}>English</option>
+          <option value="it" {{if eq .Lang "it"}}selected{{end}}>Italiano</option>
+          <option value="ja" {{if eq .Lang "ja"}}selected{{end}}>日本語</option>
         </select>
       </form>
     </div>
+
     <h1>localCA</h1>
     <p class="muted">{{index .T "subtitle"}}</p>
 
-    {{if .Message}}<div class="msg">{{.Message}}</div>{{end}}
-    {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+    {{if .Message}}<div class="msg" role="alert">{{.Message}}</div>{{end}}
+    {{if .Error}}<div class="err" role="alert">{{.Error}}</div>{{end}}
 
     {{if not .HasCA}}
       <div class="card">
         <h2>{{index .T "ca.create.title"}}</h2>
         <p class="muted">{{printf (index .T "ca.create.validity") .CAYears}}</p>
         <form method="post" action="/ca/create">
-          <label>{{index .T "ca.create.cn_label"}}<input name="ca_common_name" placeholder="{{index .T "ca.create.cn_placeholder"}}"></label>
-          <label>{{index .T "ca.create.org_label"}}<input name="organization" placeholder="{{index .T "ca.create.org_placeholder"}}"></label>
-          <label>{{index .T "ca.create.country_label"}}<input name="country" placeholder="{{index .T "ca.create.country_placeholder"}}"></label>
-          <label>{{index .T "ca.create.passphrase_label"}}<input name="ca_passphrase" type="password" placeholder="{{index .T "ca.create.passphrase_placeholder"}}"></label>
-          <button type="submit">{{index .T "ca.create.button"}}</button>
+          <div class="form-row">
+            <label>{{index .T "ca.create.cn_label"}}<input name="ca_common_name" placeholder="{{index .T "ca.create.cn_placeholder"}}"></label>
+            <label>{{index .T "ca.create.org_label"}}<input name="organization" placeholder="{{index .T "ca.create.org_placeholder"}}"></label>
+          </div>
+          <div class="form-row">
+            <label>{{index .T "ca.create.country_label"}}<input name="country" placeholder="{{index .T "ca.create.country_placeholder"}}" maxlength="2"></label>
+            <label>{{index .T "ca.create.passphrase_label"}}<input name="ca_passphrase" type="password" placeholder="{{index .T "ca.create.passphrase_placeholder"}}"></label>
+          </div>
+          <button type="submit">⊕ {{index .T "ca.create.button"}}</button>
         </form>
       </div>
     {{else}}
+      {{if .HasIntermediate}}<div class="card-row">{{end}}
+      <!-- CA Details -->
       <div class="card">
-        <h2>{{index .T "ca.active.title"}}</h2>
-        <p><strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.CACommonName}}<br>
-           <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.Organization}}<br>
-           <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.Country}}<br>
-           <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.CAValidityYears}}</p>
-        <form method="post" action="/ca/passphrase">
-          <label>{{index .T "passphrase.current_label"}}<input name="current_passphrase" type="password"></label>
-          <label>{{index .T "passphrase.new_label"}}<input name="new_passphrase" type="password" placeholder="{{index .T "passphrase.new_placeholder"}}"></label>
-          <button type="submit">{{index .T "ca.passphrase.button"}}</button>
-        </form>
-        <p>{{index .T "export.label"}}: <a href="/download?kind=ca-cert-pem">CA cert PEM</a> · <a href="/download?kind=ca-cert-der">CA cert DER</a> · <a href="/download?kind=ca-key-pem">CA key PEM</a></p>
-        <form method="post" action="/certs/crl/generate">
-          {{if .SignerPassphraseRequired}}
-            <label>{{index .T "cert.create.signer_passphrase_label"}}<input name="signer_passphrase" type="password"></label>
-          {{end}}
-          <button type="submit">{{index .T "crl.generate.button"}}</button>
-        </form>
-        {{if .HasCRL}}<p>{{index .T "crl.download.label"}}: <a href="/download?kind=crl-pem">CRL PEM</a> · <a href="/download?kind=crl-der">CRL DER</a></p>{{end}}
+        <div class="card-header">
+          <h2>{{index .T "ca.active.title"}}</h2>
+        </div>
+        <div class="ca-details">
+          <strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.CACommonName}}<br>
+          <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.Organization}}<br>
+          <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.Country}}<br>
+          <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.CAValidityYears}}
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <button type="button" class="js-ca-passphrase-btn" style="margin-top:0;">🔑 {{index .T "passphrase.change"}}</button>
+          <button type="button" class="js-ca-renew-btn" style="margin-top:0;">↻ {{index .T "ca.renew.button"}}</button>
+          <button type="button" class="js-crl-btn" style="margin-top:0;">↓ {{index .T "crl.generate.button"}}</button>
+        </div>
+
+        <div class="export-links">
+          <span class="dim">{{index .T "export.label"}}:</span>
+          <a href="/download?kind=ca-cert-pem">CA cert PEM</a>
+          <a href="/download?kind=ca-cert-der">CA cert DER</a>
+          <a href="/download?kind=ca-key-pem">CA key PEM</a>
+        </div>
+
+        {{if .HasCRL}}
+          <div class="export-links" style="margin-top:8px;">
+            <span class="dim">{{index .T "crl.download.label"}}:</span>
+            <a href="/download?kind=crl-pem">CRL PEM</a>
+            <a href="/download?kind=crl-der">CRL DER</a>
+          </div>
+        {{end}}
       </div>
-      {{if not .HasIntermediate}}
+
+      {{if .HasIntermediate}}
+        <!-- Intermediate CA active -->
+        <div class="card">
+          <div class="card-header">
+            <h2>{{index .T "intermediate.active.title"}}</h2>
+          </div>
+          <div class="ca-details">
+            <strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.IntermediateCommonName}}<br>
+            <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.IntermediateOrganization}}<br>
+            <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.IntermediateCountry}}<br>
+            <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.IntermediateValidityYears}}
+          </div>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+            <button type="button" class="js-intermediate-passphrase-btn" style="margin-top:0;">🔑 {{index .T "passphrase.change"}}</button>
+            <button type="button" class="js-intermediate-renew-btn" style="margin-top:0;">↻ {{index .T "intermediate.renew.button"}}</button>
+          </div>
+
+          <div class="export-links">
+            <span class="dim">{{index .T "export.label"}}:</span>
+            <a href="/download?kind=intermediate-cert-pem">Intermediate cert PEM</a>
+            <a href="/download?kind=intermediate-chain-pem">Intermediate chain PEM</a>
+          </div>
+        </div>
+      </div>{{/* closes card-row */}}
+      {{else}}
+        <!-- Intermediate CA create -->
         <div class="card">
           <h2>{{index .T "intermediate.create.title"}}</h2>
           <p class="muted">{{printf (index .T "intermediate.create.validity") .IntermediateYears}}</p>
           <form method="post" action="/intermediate/create">
-            <label>{{index .T "intermediate.create.cn_label"}}<input name="intermediate_common_name" placeholder="{{index .T "intermediate.create.cn_placeholder"}}"></label>
-            <label>{{index .T "intermediate.create.org_label"}}<input name="intermediate_organization" placeholder="{{.Config.Organization}}"></label>
-            <label>{{index .T "intermediate.create.country_label"}}<input name="intermediate_country" placeholder="{{.Config.Country}}"></label>
-            {{if .Config.CAPassphraseSet}}
-              <label>{{index .T "intermediate.create.ca_passphrase_label"}}<input name="ca_passphrase" type="password"></label>
-            {{end}}
+            <div class="form-row">
+              <label>{{index .T "intermediate.create.cn_label"}}<input name="intermediate_common_name" placeholder="{{index .T "intermediate.create.cn_placeholder"}}"></label>
+              <label>{{index .T "intermediate.create.org_label"}}<input name="intermediate_organization" placeholder="{{.Config.Organization}}"></label>
+            </div>
+            <div class="form-row">
+              <label>{{index .T "intermediate.create.country_label"}}<input name="intermediate_country" placeholder="{{.Config.Country}}" maxlength="2"></label>
+              {{if .Config.CAPassphraseSet}}
+                <label>{{index .T "intermediate.create.ca_passphrase_label"}}<input name="ca_passphrase" type="password"></label>
+              {{end}}
+            </div>
             <label>{{index .T "intermediate.create.passphrase_label"}}<input name="intermediate_passphrase" type="password" placeholder="{{index .T "intermediate.create.passphrase_placeholder"}}"></label>
-            <button type="submit">{{index .T "intermediate.create.button"}}</button>
+            <button type="submit">⊕ {{index .T "intermediate.create.button"}}</button>
           </form>
-        </div>
-      {{else}}
-        <div class="card">
-          <h2>{{index .T "intermediate.active.title"}}</h2>
-          <p><strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.IntermediateCommonName}}<br>
-             <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.IntermediateOrganization}}<br>
-             <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.IntermediateCountry}}<br>
-             <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.IntermediateValidityYears}}</p>
-          <form method="post" action="/intermediate/passphrase">
-            <label>{{index .T "passphrase.current_label"}}<input name="current_passphrase" type="password"></label>
-            <label>{{index .T "passphrase.new_label"}}<input name="new_passphrase" type="password" placeholder="{{index .T "passphrase.new_placeholder"}}"></label>
-            <button type="submit">{{index .T "intermediate.passphrase.button"}}</button>
-          </form>
-          <p>{{index .T "export.label"}}: <a href="/download?kind=intermediate-cert-pem">Intermediate cert PEM</a> · <a href="/download?kind=intermediate-chain-pem">Intermediate chain PEM</a></p>
         </div>
       {{end}}
 
+      <!-- Create Certificate -->
       <div class="card">
         <h2>{{index .T "cert.create.title"}}</h2>
         <form method="post" action="/certs/create">
-          <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="dev.local"></label>
-          <label>{{index .T "cert.create.sans_label"}}
-            <input name="sans" placeholder="dev.local, api.local, 127.0.0.1">
-          </label>
-          <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
-            <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
-          </label>
-          <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
-          {{if .SignerPassphraseRequired}}
-            <label>{{index .T "cert.create.signer_passphrase_label"}}<input name="signer_passphrase" type="password"></label>
+          <div class="form-row">
+            <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="dev.local"></label>
+            <label>{{index .T "cert.create.sans_label"}}
+              <input name="sans" placeholder="dev.local, api.local, 127.0.0.1">
+            </label>
+          </div>
+          <div class="form-row">
+            <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
+              <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
+            </label>
+            <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
+          </div>
+          {{if .HasIntermediate}}
+            <div class="radio-group" role="radiogroup" aria-label="{{index .T "cert.create.signer_selection"}}">
+              <label>
+                <input type="radio" name="signer" value="ca" class="js-signer-radio" data-passphrase="{{.Config.CAPassphraseSet}}" checked>
+                {{index .T "cert.create.signer_ca"}} ({{.Config.CACommonName}})
+              </label>
+              <label>
+                <input type="radio" name="signer" value="intermediate" class="js-signer-radio" data-passphrase="{{.Config.IntermediatePassphraseSet}}">
+                {{index .T "cert.create.signer_intermediate"}} ({{.Config.IntermediateCommonName}})
+              </label>
+            </div>
           {{end}}
-          <button type="submit">{{index .T "cert.create.button"}}</button>
+          <div class="js-signer-passphrase-wrap" {{if not (or .Config.CAPassphraseSet .Config.IntermediatePassphraseSet)}}style="display:none"{{end}}>
+            <label>
+              <span class="js-signer-passphrase-label">{{index .T "cert.create.signer_passphrase_label"}}</span>
+              <input name="signer_passphrase" type="password">
+            </label>
+          </div>
+          <button type="submit">⊕ {{index .T "cert.create.button"}}</button>
         </form>
       </div>
 
+      <!-- Certificates Table -->
       <div class="card">
-        <h2>{{index .T "cert.list.title"}}</h2>
-        <form class="js-cert-filter-form" method="get" action="/">
-          <label>{{index .T "cert.list.filter_label"}}<input class="js-cert-filter-input" name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}"></label>
+        <div class="card-header" style="margin-bottom:12px;">
+          <h2 style="margin:0;">{{index .T "cert.list.title"}}</h2>
+        </div>
+        <form class="js-cert-filter-form" method="get" action="/" role="search" aria-label="{{index .T "cert.list.filter_placeholder"}}">
+          <div class="filter-wrap">
+            <input class="js-cert-filter-input" name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}" aria-label="{{index .T "cert.list.filter_placeholder"}}">
+            <button type="button" class="js-filter-clear filter-clear" aria-label="Clear filter">&times;</button>
+          </div>
         </form>
-        <table>
-          <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.status"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
-          <tbody class="js-cert-table-body">
-            {{range .Certificates}}
-              <tr>
-                <td>{{.ID}}</td>
-                <td>{{.CommonName}}</td>
-                <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
-                <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
-                <td>{{if .RevokedAt}}{{index $.T "cert.status.revoked"}}{{else}}{{index $.T "cert.status.active"}}{{end}}</td>
-                <td class="cert-actions">
-                  <form class="inline-form" method="get" action="/download">
-                    <input type="hidden" name="kind" value="all-tar-gz">
-                    <input type="hidden" name="id" value="{{.ID}}">
-                    <input name="export_passphrase" type="password" placeholder="{{index $.T "cert.list.export_passphrase_placeholder"}}">
-                    <button type="submit">tar.gz</button>
-                  </form>
-                  <form class="inline-form" method="post" action="/certs/passphrase">
-                    <input type="hidden" name="id" value="{{.ID}}">
-                    <input name="current_passphrase" type="password" placeholder="{{index $.T "passphrase.current_short"}}">
-                    <input name="new_passphrase" type="password" placeholder="{{index $.T "passphrase.new_short"}}">
-                    <button type="submit">{{index $.T "cert.list.passphrase"}}</button>
-                  </form>
-                  <form class="inline-form" method="post" action="/certs/renew">
-                    <input type="hidden" name="id" value="{{.ID}}">
-                    <input name="key_passphrase" type="password" placeholder="{{index $.T "cert.create.key_passphrase_placeholder"}}">
-                    {{if $.SignerPassphraseRequired}}
-                      <input name="signer_passphrase" type="password" placeholder="{{index $.T "cert.create.signer_passphrase_label"}}">
+        <div class="table-wrap js-cert-table-wrap">
+          <table aria-label="{{index .T "cert.list.title"}}">
+            <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.status"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
+            <tbody class="js-cert-table-body">
+              {{range .Certificates}}
+                <tr>
+                  <td class="dim" style="font-size:0.8rem;">{{.ID}}</td>
+                  <td><strong>{{.CommonName}}</strong></td>
+                  <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
+                  <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
+                  <td>{{if .RevokedAt}}<span class="badge badge-revoked">{{index $.T "cert.status.revoked"}}</span>{{else}}<span class="badge badge-active">{{index $.T "cert.status.active"}}</span>{{end}}</td>
+                  <td class="cert-actions">
+                    <button type="button" class="js-export-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">⬇ tar.gz</button>
+                    <button type="button" class="js-passphrase-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔑 {{index $.T "cert.list.passphrase"}}</button>
+                    <button type="button" class="js-renew-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">↻ {{index $.T "cert.list.renew"}}</button>
+                    {{if not .RevokedAt}}
+                      <form class="inline-form js-delete-cert-form" method="post" action="/certs/revoke" data-confirm-text="{{index $.T "cert.revoke.confirm"}}">
+                        <input type="hidden" name="id" value="{{.ID}}">
+                        <button type="submit">⛔ {{index $.T "cert.list.revoke"}}</button>
+                      </form>
                     {{end}}
-                    <button type="submit">{{index $.T "cert.list.renew"}}</button>
-                  </form>
-                  {{if not .RevokedAt}}
-                    <form class="inline-form js-delete-cert-form" method="post" action="/certs/revoke" data-confirm-text="{{index $.T "cert.revoke.confirm"}}">
+                    <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
                       <input type="hidden" name="id" value="{{.ID}}">
-                      <button type="submit">{{index $.T "cert.list.revoke"}}</button>
+                      <button class="danger" type="submit" aria-label="{{index $.T "cert.list.delete"}} {{.ID}}">✕ {{index $.T "cert.list.delete"}}</button>
                     </form>
-                  {{end}}
-                  <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
-                    <input type="hidden" name="id" value="{{.ID}}">
-                    <button class="danger" type="submit">{{index $.T "cert.list.delete"}}</button>
-                  </form>
-                </td>
-              </tr>
-            {{else}}
-              <tr><td colspan="6" class="muted">{{index .T "cert.list.none"}}</td></tr>
-            {{end}}
-          </tbody>
-        </table>
+                  </td>
+                </tr>
+              {{else}}
+                <tr><td colspan="6" class="muted" style="text-align:center;padding:24px;">{{index .T "cert.list.none"}}</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
       </div>
     {{end}}
+  </div>
+
+  <!-- Passphrase change modal -->
+  <div class="modal-overlay js-passphrase-modal" role="dialog" aria-modal="true" aria-labelledby="passphrase-modal-title">
+    <div class="modal">
+      <h3 id="passphrase-modal-title">{{index .T "cert.list.passphrase"}}</h3>
+      <form method="post" action="/certs/passphrase">
+        <input type="hidden" name="id" class="js-modal-cert-id">
+        <label>{{index .T "passphrase.current_short"}}<input name="current_passphrase" type="password" class="js-modal-current-pass"></label>
+        <label>{{index .T "passphrase.new_short"}}<input name="new_passphrase" type="password" class="js-modal-new-pass"></label>
+        <div class="form-actions">
+          <button type="submit">🔑 {{index .T "cert.list.passphrase"}}</button>
+          <button type="button" class="danger js-modal-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Renew certificate modal -->
+  <div class="modal-overlay js-renew-modal" role="dialog" aria-modal="true" aria-labelledby="renew-modal-title">
+    <div class="modal">
+      <h3 id="renew-modal-title">{{index .T "cert.list.renew"}}</h3>
+      <p class="muted" style="margin-bottom:12px;">{{index .T "cert.renew.description"}}</p>
+      <form method="post" action="/certs/renew">
+        <input type="hidden" name="id" class="js-renew-cert-id">
+        <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
+        {{if .SignerPassphraseRequired}}
+          <label>{{index .T "cert.create.signer_passphrase_label"}}<input name="signer_passphrase" type="password"></label>
+        {{end}}
+        <div class="form-actions">
+          <button type="submit">↻ {{index .T "cert.list.renew"}}</button>
+          <button type="button" class="danger js-renew-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Export certificate modal -->
+  <div class="modal-overlay js-export-modal" role="dialog" aria-modal="true" aria-labelledby="export-modal-title">
+    <div class="modal">
+      <h3 id="export-modal-title">{{index .T "cert.list.export"}}</h3>
+      <form method="get" action="/download">
+        <input type="hidden" name="kind" value="all-tar-gz">
+        <input type="hidden" name="id" class="js-export-cert-id">
+        <label>{{index .T "cert.list.export_passphrase_label"}}<input name="export_passphrase" type="password" placeholder="{{index .T "cert.list.export_passphrase_placeholder"}}"></label>
+        <p class="dim" style="margin-top:4px;">{{index .T "cert.list.export_hint"}}</p>
+        <div class="form-actions">
+          <button type="submit">↓ {{index .T "cert.list.export"}}</button>
+          <button type="button" class="danger js-export-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CA passphrase modal -->
+  <div class="modal-overlay js-ca-passphrase-modal" role="dialog" aria-modal="true" aria-labelledby="ca-passphrase-modal-title">
+    <div class="modal">
+      <h3 id="ca-passphrase-modal-title">{{index .T "passphrase.change"}} — CA</h3>
+      <form method="post" action="/ca/passphrase">
+        <label>{{index .T "passphrase.current_label"}}<input name="current_passphrase" type="password"></label>
+        <label>{{index .T "passphrase.new_label"}}<input name="new_passphrase" type="password" placeholder="{{index .T "passphrase.new_placeholder"}}"></label>
+        <div class="form-actions">
+          <button type="submit">🔑 {{index .T "ca.passphrase.button"}}</button>
+          <button type="button" class="danger js-ca-passphrase-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CA renew modal -->
+  <div class="modal-overlay js-ca-renew-modal" role="dialog" aria-modal="true" aria-labelledby="ca-renew-modal-title">
+    <div class="modal">
+      <h3 id="ca-renew-modal-title">{{index .T "ca.renew.button"}}</h3>
+      <p class="muted" style="margin-bottom:12px;">{{index .T "cert.renew.description"}}</p>
+      <form method="post" action="/ca/renew">
+        {{if .Config.CAPassphraseSet}}
+          <label>{{index .T "intermediate.create.ca_passphrase_label"}}<input name="ca_passphrase" type="password"></label>
+        {{end}}
+        <div class="form-actions">
+          <button type="submit">↻ {{index .T "ca.renew.button"}}</button>
+          <button type="button" class="danger js-ca-renew-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CRL generate modal -->
+  <div class="modal-overlay js-crl-modal" role="dialog" aria-modal="true" aria-labelledby="crl-modal-title">
+    <div class="modal">
+      <h3 id="crl-modal-title">{{index .T "crl.generate.button"}}</h3>
+      <form method="post" action="/certs/crl/generate">
+        {{if .SignerPassphraseRequired}}
+          <label>{{index .T "cert.create.signer_passphrase_label"}}<input name="signer_passphrase" type="password"></label>
+        {{end}}
+        <div class="form-actions">
+          <button type="submit">↓ {{index .T "crl.generate.button"}}</button>
+          <button type="button" class="danger js-crl-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Intermediate CA passphrase modal -->
+  <div class="modal-overlay js-intermediate-passphrase-modal" role="dialog" aria-modal="true" aria-labelledby="intermediate-passphrase-modal-title">
+    <div class="modal">
+      <h3 id="intermediate-passphrase-modal-title">{{index .T "passphrase.change"}} — Intermediate</h3>
+      <form method="post" action="/intermediate/passphrase">
+        <label>{{index .T "passphrase.current_label"}}<input name="current_passphrase" type="password"></label>
+        <label>{{index .T "passphrase.new_label"}}<input name="new_passphrase" type="password" placeholder="{{index .T "passphrase.new_placeholder"}}"></label>
+        <div class="form-actions">
+          <button type="submit">🔑 {{index .T "intermediate.passphrase.button"}}</button>
+          <button type="button" class="danger js-intermediate-passphrase-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Intermediate CA renew modal -->
+  <div class="modal-overlay js-intermediate-renew-modal" role="dialog" aria-modal="true" aria-labelledby="intermediate-renew-modal-title">
+    <div class="modal">
+      <h3 id="intermediate-renew-modal-title">{{index .T "intermediate.renew.button"}}</h3>
+      <p class="muted" style="margin-bottom:12px;">{{index .T "cert.renew.description"}}</p>
+      <form method="post" action="/intermediate/renew">
+        {{if .Config.CAPassphraseSet}}
+          <label>{{index .T "intermediate.create.ca_passphrase_label"}}<input name="ca_passphrase" type="password"></label>
+        {{end}}
+        <div class="form-actions">
+          <button type="submit">↻ {{index .T "intermediate.renew.button"}}</button>
+          <button type="button" class="danger js-intermediate-renew-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
   </div>
 </body>
 </html>

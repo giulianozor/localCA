@@ -1,43 +1,26 @@
 {{range .Certificates}}
   <tr>
-    <td>{{.ID}}</td>
-    <td>{{.CommonName}}</td>
+    <td class="dim" style="font-size:0.8rem;">{{.ID}}</td>
+    <td><strong>{{.CommonName}}</strong></td>
     <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
     <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
-    <td>{{if .RevokedAt}}{{index $.T "cert.status.revoked"}}{{else}}{{index $.T "cert.status.active"}}{{end}}</td>
+    <td>{{if .RevokedAt}}<span class="badge badge-revoked">{{index $.T "cert.status.revoked"}}</span>{{else}}<span class="badge badge-active">{{index $.T "cert.status.active"}}</span>{{end}}</td>
     <td class="cert-actions">
-      <form class="inline-form" method="get" action="/download">
-        <input type="hidden" name="kind" value="all-tar-gz">
-        <input type="hidden" name="id" value="{{.ID}}">
-        <input name="export_passphrase" type="password" placeholder="{{index $.T "cert.list.export_passphrase_placeholder"}}">
-        <button type="submit">tar.gz</button>
-      </form>
-      <form class="inline-form" method="post" action="/certs/passphrase">
-        <input type="hidden" name="id" value="{{.ID}}">
-        <input name="current_passphrase" type="password" placeholder="{{index $.T "passphrase.current_short"}}">
-        <input name="new_passphrase" type="password" placeholder="{{index $.T "passphrase.new_short"}}">
-        <button type="submit">{{index $.T "cert.list.passphrase"}}</button>
-      </form>
-      <form class="inline-form" method="post" action="/certs/renew">
-        <input type="hidden" name="id" value="{{.ID}}">
-        <input name="key_passphrase" type="password" placeholder="{{index $.T "cert.create.key_passphrase_placeholder"}}">
-        {{if $.SignerPassphraseRequired}}
-          <input name="signer_passphrase" type="password" placeholder="{{index $.T "cert.create.signer_passphrase_label"}}">
-        {{end}}
-        <button type="submit">{{index $.T "cert.list.renew"}}</button>
-      </form>
+      <button type="button" class="js-export-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">⬇ tar.gz</button>
+      <button type="button" class="js-passphrase-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔑 {{index $.T "cert.list.passphrase"}}</button>
+      <button type="button" class="js-renew-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">↻ {{index $.T "cert.list.renew"}}</button>
       {{if not .RevokedAt}}
         <form class="inline-form js-delete-cert-form" method="post" action="/certs/revoke" data-confirm-text="{{index $.T "cert.revoke.confirm"}}">
           <input type="hidden" name="id" value="{{.ID}}">
-          <button type="submit">{{index $.T "cert.list.revoke"}}</button>
+          <button type="submit">⛔ {{index $.T "cert.list.revoke"}}</button>
         </form>
       {{end}}
       <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
         <input type="hidden" name="id" value="{{.ID}}">
-        <button class="danger" type="submit" aria-label="{{index $.T "cert.list.delete"}} {{.ID}}">{{index $.T "cert.list.delete"}}</button>
+        <button class="danger" type="submit" aria-label="{{index $.T "cert.list.delete"}} {{.ID}}">✕ {{index $.T "cert.list.delete"}}</button>
       </form>
     </td>
   </tr>
 {{else}}
-  <tr><td colspan="6" class="muted">{{index .T "cert.list.none"}}</td></tr>
+  <tr><td colspan="6" class="muted" style="text-align:center;padding:24px;">{{index .T "cert.list.none"}}</td></tr>
 {{end}}
