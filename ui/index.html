@@ -42,6 +42,10 @@
           </div>
           <button type="submit">⊕ {{index .T "ca.create.button"}}</button>
         </form>
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+          <p class="dim" style="margin:0 0 8px;">{{index .T "ca.backup.import.desc"}}</p>
+          <button type="button" class="js-ca-import-btn" style="margin-top:0;">⬆ {{index .T "ca.backup.import"}}</button>
+        </div>
       </div>
     {{else}}
       {{if .HasIntermediate}}<div class="card-row">{{end}}
@@ -61,6 +65,8 @@
           <button type="button" class="js-ca-passphrase-btn" style="margin-top:0;">🔑 {{index .T "passphrase.change"}}</button>
           <button type="button" class="js-ca-renew-btn" style="margin-top:0;">↻ {{index .T "ca.renew.button"}}</button>
           <button type="button" class="js-crl-btn" style="margin-top:0;">↓ {{index .T "crl.generate.button"}}</button>
+          <button type="button" class="js-ca-export-btn" style="margin-top:0;">⬇ {{index .T "ca.backup.export"}}</button>
+          <button type="button" class="js-ca-import-btn" style="margin-top:0;">⬆ {{index .T "ca.backup.import"}}</button>
         </div>
 
         <div class="export-links">
@@ -339,6 +345,38 @@
         <div class="form-actions">
           <button type="submit">↻ {{index .T "intermediate.renew.button"}}</button>
           <button type="button" class="danger js-intermediate-renew-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CA backup export modal -->
+  <div class="modal-overlay js-ca-export-modal" role="dialog" aria-modal="true" aria-labelledby="ca-export-modal-title">
+    <div class="modal">
+      <h3 id="ca-export-modal-title">{{index .T "ca.backup.export.title"}}</h3>
+      <p class="muted" style="margin-bottom:12px;">{{index .T "ca.backup.export.desc"}}</p>
+      <form method="get" action="/download">
+        <input type="hidden" name="kind" value="ca-all-tar-gz">
+        <label>{{index .T "ca.backup.export_passphrase_label"}}<input name="export_passphrase" type="password" placeholder="{{index .T "ca.backup.export_passphrase_placeholder"}}"></label>
+        <div class="form-actions">
+          <button type="submit">⬇ {{index .T "ca.backup.export.button"}}</button>
+          <button type="button" class="danger js-ca-export-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CA backup import modal -->
+  <div class="modal-overlay js-ca-import-modal" role="dialog" aria-modal="true" aria-labelledby="ca-import-modal-title">
+    <div class="modal">
+      <h3 id="ca-import-modal-title">{{index .T "ca.backup.import.title"}}</h3>
+      <p class="muted" style="margin-bottom:12px;">{{index .T "ca.backup.import.desc"}}</p>
+      <form method="post" action="/ca/import" enctype="multipart/form-data">
+        <label>{{index .T "ca.backup.import.file_label"}}<input name="archive" type="file" accept=".tar.gz,.gz,.tgz" required></label>
+        <label>{{index .T "ca.backup.import_passphrase_label"}}<input name="import_passphrase" type="password" placeholder="{{index .T "ca.backup.import_passphrase_placeholder"}}"></label>
+        <div class="form-actions">
+          <button type="submit">⬆ {{index .T "ca.backup.import.button"}}</button>
+          <button type="button" class="danger js-ca-import-close">✕ {{index .T "cert.list.cancel"}}</button>
         </div>
       </form>
     </div>

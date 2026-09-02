@@ -186,6 +186,8 @@
   setupModal(".js-crl-modal", ".js-crl-btn", ".js-crl-close");
   setupModal(".js-intermediate-passphrase-modal", ".js-intermediate-passphrase-btn", ".js-intermediate-passphrase-close");
   setupModal(".js-intermediate-renew-modal", ".js-intermediate-renew-btn", ".js-intermediate-renew-close");
+  setupModal(".js-ca-export-modal", ".js-ca-export-btn", ".js-ca-export-close");
+  setupModal(".js-ca-import-modal", ".js-ca-import-btn", ".js-ca-import-close");
 
   // --- Clean message/error query params to prevent re-display on refresh ---
   if (window.history.replaceState) {

@@ -107,5 +107,20 @@
   "crl.generate.button": "CRL を生成",
   "crl.download.label": "CRL をダウンロード",
   "msg.ca_renewed": "CA 証明書を更新しました",
-  "msg.intermediate_renewed": "中間証明書を更新しました"
+  "msg.intermediate_renewed": "中間証明書を更新しました",
+  "ca.backup.export": "CA をエクスポート",
+  "ca.backup.import": "CA をインポート",
+  "ca.backup.export.title": "CA バックアップをエクスポート",
+  "ca.backup.export.desc": "CA 全体（鍵、証明書、CRL、発行済み証明書）を tar.gz アーカイブとしてダウンロードします。",
+  "ca.backup.export_passphrase_label": "パスフレーズでアーカイブを暗号化（任意）",
+  "ca.backup.export_passphrase_placeholder": "アーカイブを保護するパスフレーズ",
+  "ca.backup.export.button": "バックアップをダウンロード",
+  "ca.backup.import.title": "CA バックアップをインポート",
+  "ca.backup.import.desc": "空のデータディレクトリに CA 全体のバックアップを復元します。",
+  "ca.backup.import_passphrase_label": "アーカイブのパスフレーズ（暗号化されていない場合は空）",
+  "ca.backup.import_passphrase_placeholder": "アーカイブの暗号化に使ったパスフレーズ",
+  "ca.backup.import.button": "バックアップを復元",
+  "ca.backup.import.file_label": "バックアップアーカイブ (tar.gz)",
+  "msg.ca_imported": "CA をインポートしました",
+  "msg.ca_import_failed": "CA のインポートに失敗しました"
 }

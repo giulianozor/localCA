@@ -31,6 +31,7 @@ The application listens on all network interfaces and exposes the UI at `http://
 - CA/intermediate/issued private-key passphrase set/change/remove support
 - Certificate revoke and renew actions from the issued certificates list
 - Per-certificate export as `tar.gz` only, with optional export passphrase
+- Whole-CA export/import as a `tar.gz` backup (CA, intermediate, CRL and all issued certificates), with optional passphrase-based AES encryption
 - UI language selector (English/Italian/Japanese) with preference persisted in `config.json`
 - UI translations are embedded in the binary (no runtime `i18n/*.json` files required)
 - Issued certificate filtering by ID/CN/SAN with debounced updates (300 ms) and table-only refresh (no full page reload)

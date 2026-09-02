@@ -107,5 +107,20 @@
   "crl.generate.button": "Genera CRL",
   "crl.download.label": "Scarica CRL",
   "msg.ca_renewed": "Certificato CA rinnovato con successo",
-  "msg.intermediate_renewed": "Certificato intermedio rinnovato con successo"
+  "msg.intermediate_renewed": "Certificato intermedio rinnovato con successo",
+  "ca.backup.export": "Esporta CA",
+  "ca.backup.import": "Importa CA",
+  "ca.backup.export.title": "Esporta backup CA",
+  "ca.backup.export.desc": "Scarica l'intera CA (chiavi, certificati, CRL e certificati emessi) come archivio tar.gz.",
+  "ca.backup.export_passphrase_label": "Crittografa l'archivio con passphrase (facoltativo)",
+  "ca.backup.export_passphrase_placeholder": "Passphrase per proteggere l'archivio",
+  "ca.backup.export.button": "Scarica backup",
+  "ca.backup.import.title": "Importa backup CA",
+  "ca.backup.import.desc": "Ripristina un backup completo della CA in una directory dati vuota.",
+  "ca.backup.import_passphrase_label": "Passphrase dell'archivio (lasciare vuoto se non crittografato)",
+  "ca.backup.import_passphrase_placeholder": "Passphrase usata per crittografare l'archivio",
+  "ca.backup.import.button": "Ripristina backup",
+  "ca.backup.import.file_label": "Archivio backup (tar.gz)",
+  "msg.ca_imported": "CA importata con successo",
+  "msg.ca_import_failed": "Importazione CA non riuscita"
 }
