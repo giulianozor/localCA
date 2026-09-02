@@ -25,7 +25,7 @@ func TestHTTP3TLSCertCompatibility(t *testing.T) {
 		"localhost",
 		"127.0.0.1",
 		"::1",
-	}, 1, "", "", a.hasIntermediate()); err != nil {
+	}, 1, "", "", a.hasIntermediate(), false); err != nil {
 		t.Fatalf("createServerCert() error = %v", err)
 	}
 

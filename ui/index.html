@@ -136,6 +136,16 @@
       <div class="card">
         <h2>{{index .T "cert.create.title"}}</h2>
         <form method="post" action="/certs/create">
+          <div class="radio-group" role="radiogroup" aria-label="{{index .T "cert.create.type_label"}}">
+            <label>
+              <input type="radio" name="cert_type" value="server" class="js-cert-type-radio" checked>
+              {{index .T "cert.create.type_server"}}
+            </label>
+            <label>
+              <input type="radio" name="cert_type" value="client" class="js-cert-type-radio">
+              {{index .T "cert.create.type_client"}}
+            </label>
+          </div>
           <div class="form-row">
             <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="dev.local"></label>
             <label>{{index .T "cert.create.sans_label"}}
@@ -188,12 +198,15 @@
               {{range .Certificates}}
                 <tr>
                   <td class="dim" style="font-size:0.8rem;">{{.ID}}</td>
-                  <td><strong>{{.CommonName}}</strong></td>
+                  <td><strong>{{.CommonName}}</strong>{{if .Client}} <span class="badge badge-client">{{index $.T "cert.type.client_badge"}}</span>{{end}}</td>
                   <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
                   <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
                   <td>{{if .RevokedAt}}<span class="badge badge-revoked">{{index $.T "cert.status.revoked"}}</span>{{else}}<span class="badge badge-active">{{index $.T "cert.status.active"}}</span>{{end}}</td>
                   <td class="cert-actions">
                     <button type="button" class="js-export-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">⬇ tar.gz</button>
+                    {{if .Client}}
+                      <button type="button" class="js-p12-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔐 p12</button>
+                    {{end}}
                     <button type="button" class="js-passphrase-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔑 {{index $.T "cert.list.passphrase"}}</button>
                     <button type="button" class="js-renew-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">↻ {{index $.T "cert.list.renew"}}</button>
                     {{if not .RevokedAt}}
@@ -265,6 +278,24 @@
         <div class="form-actions">
           <button type="submit">↓ {{index .T "cert.list.export"}}</button>
           <button type="button" class="danger js-export-close">✕ {{index .T "cert.list.cancel"}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- PKCS#12 (client certificate) export modal -->
+  <div class="modal-overlay js-p12-modal" role="dialog" aria-modal="true" aria-labelledby="p12-modal-title">
+    <div class="modal">
+      <h3 id="p12-modal-title">PKCS#12 (.p12)</h3>
+      <p class="muted" style="margin-bottom:12px;">{{index .T "cert.p12.desc"}}</p>
+      <form method="get" action="/download">
+        <input type="hidden" name="kind" value="client-p12">
+        <input type="hidden" name="id" class="js-p12-cert-id">
+        <label>{{index .T "cert.p12.passphrase_label"}}<input name="export_passphrase" type="password" placeholder="{{index .T "cert.p12.passphrase_placeholder"}}"></label>
+        <p class="dim" style="margin-top:4px;">{{index .T "cert.p12.hint"}}</p>
+        <div class="form-actions">
+          <button type="submit">⬇ p12</button>
+          <button type="button" class="danger js-p12-close">✕ {{index .T "cert.list.cancel"}}</button>
         </div>
       </form>
     </div>

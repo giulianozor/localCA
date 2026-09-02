@@ -25,7 +25,7 @@ func buildTestCA(t *testing.T) (*app, string) {
 	}
 	if err := a.createServerCert("myserver.example.com", []string{
 		"myserver.example.com", "127.0.0.1",
-	}, 1, "", "", false); err != nil {
+	}, 1, "", "", false, false); err != nil {
 		t.Fatalf("createServerCert() error = %v", err)
 	}
 	certs, err := a.listCerts()

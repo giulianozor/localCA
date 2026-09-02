@@ -122,6 +122,24 @@
     updatePassphraseField();
   }
 
+  // --- Certificate type toggle (server vs client) ---
+  const certTypeRadios = document.querySelectorAll(".js-cert-type-radio");
+  const certSansInput = document.querySelector('form[action="/certs/create"] input[name="sans"]');
+  if (certTypeRadios.length > 0 && certSansInput) {
+    const serverLabel = certSansInput.getAttribute("placeholder");
+    const updateType = () => {
+      const selected = document.querySelector(".js-cert-type-radio:checked");
+      const isClient = selected && selected.value === "client";
+      if (isClient) {
+        certSansInput.setAttribute("placeholder", "client@example.com, username (optional)");
+      } else {
+        certSansInput.setAttribute("placeholder", serverLabel);
+      }
+    };
+    certTypeRadios.forEach((r) => r.addEventListener("change", updateType));
+    updateType();
+  }
+
   // --- Reusable modal setup helper with focus management ---
   const setupModal = (overlaySelector, btnSelector, closeSelector, getData) => {
     const modal = document.querySelector(overlaySelector);
@@ -181,6 +199,8 @@
     (btn) => { document.querySelector(".js-renew-cert-id").value = btn.getAttribute("data-cert-id"); });
   setupModal(".js-export-modal", ".js-export-btn", ".js-export-close",
     (btn) => { document.querySelector(".js-export-cert-id").value = btn.getAttribute("data-cert-id"); });
+  setupModal(".js-p12-modal", ".js-p12-btn", ".js-p12-close",
+    (btn) => { document.querySelector(".js-p12-cert-id").value = btn.getAttribute("data-cert-id"); });
   setupModal(".js-ca-passphrase-modal", ".js-ca-passphrase-btn", ".js-ca-passphrase-close");
   setupModal(".js-ca-renew-modal", ".js-ca-renew-btn", ".js-ca-renew-close");
   setupModal(".js-crl-modal", ".js-crl-btn", ".js-crl-close");

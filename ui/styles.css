@@ -280,6 +280,11 @@ a:hover {
   color: #4ade80;
 }
 
+.badge-client {
+  background: rgba(168,85,247,.15);
+  color: #d8b4fe;
+}
+
 .badge-revoked {
   background: rgba(239,68,68,.15);
   color: #f87171;

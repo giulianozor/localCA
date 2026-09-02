@@ -32,6 +32,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	pkcs12 "software.sslmate.com/src/go-pkcs12"
 )
 
 const (
@@ -87,6 +89,7 @@ type certMetadata struct {
 	ID            string     `json:"id"`
 	CommonName    string     `json:"common_name"`
 	SANs          []string   `json:"sans"`
+	Client        bool       `json:"client,omitempty"`
 	ValidityYears int        `json:"validity_years"`
 	CreatedAt     time.Time  `json:"created_at"`
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
@@ -520,15 +523,27 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isClient := r.FormValue("cert_type") == "client"
 	sansInput := strings.TrimSpace(r.FormValue("sans"))
-	sans, err := parseSANs(sansInput)
-	if err != nil {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+	var sans []string
+	var sansErr error
+	if isClient {
+		sans, sansErr = parseSANsOptional(sansInput)
+	} else {
+		sans, sansErr = parseSANs(sansInput)
+	}
+	if sansErr != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(sansErr.Error()), http.StatusSeeOther)
 		return
 	}
 	commonName := strings.TrimSpace(r.FormValue("common_name"))
 	if commonName == "" {
-		commonName = sans[0]
+		if len(sans) > 0 {
+			commonName = sans[0]
+		} else if isClient {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.client_cn_required")), http.StatusSeeOther)
+			return
+		}
 	}
 	years, err := parseValidityYears(r.FormValue("validity_years"))
 	if err != nil {
@@ -551,7 +566,7 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.createServerCert(commonName, sans, years, keyPassphrase, signerPassphrase, useIntermediate); err != nil {
+	if err := a.createServerCert(commonName, sans, years, keyPassphrase, signerPassphrase, useIntermediate, isClient); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -797,7 +812,7 @@ func (a *app) handleRenewCert(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, a.hasIntermediate()); err != nil {
+	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, a.hasIntermediate(), meta.Client); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -908,6 +923,18 @@ func (a *app) handleDownload(w http.ResponseWriter, r *http.Request) {
 		}
 		exportPassphrase := strings.TrimSpace(r.URL.Query().Get("export_passphrase"))
 		if err := writeCertificateArchive(w, path, safeID, a.dataDir, exportPassphrase); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	if kind == "client-p12" {
+		path, safeID, err := a.resolveCertificateDir(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		p12Passphrase := strings.TrimSpace(r.URL.Query().Get("export_passphrase"))
+		if err := writeCertificateP12(w, path, safeID, a.dataDir, p12Passphrase); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -1051,6 +1078,16 @@ func parseSANs(input string) ([]string, error) {
 		return nil, errors.New("enter at least one SAN (FQDN, IP, or hostname)")
 	}
 	return result, nil
+}
+
+// parseSANsOptional parses a comma-separated SAN list, returning an empty
+// slice (not an error) when the input is blank. Used for client certificates,
+// where the CommonName is the identity and SANs are not required.
+func parseSANsOptional(input string) ([]string, error) {
+	if strings.TrimSpace(input) == "" {
+		return nil, nil
+	}
+	return parseSANs(input)
 }
 
 func splitSANs(sans []string) ([]string, []net.IP) {
@@ -1428,7 +1465,7 @@ func (a *app) renewIntermediateCA(caPassphrase string) error {
 	return nil
 }
 
-func (a *app) createServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string, useIntermediate bool) error {
+func (a *app) createServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string, useIntermediate bool, client bool) error {
 	signerCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
 	if err != nil {
 		return errors.New("CA certificate not found")
@@ -1473,6 +1510,12 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 
 	now := time.Now()
 	dnsNames, ipAddresses := splitSANs(sans)
+	extKeyUsage := []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
+	keyUsage := x509.KeyUsageDigitalSignature
+	if !client {
+		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+		keyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
+	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
@@ -1480,8 +1523,8 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		},
 		NotBefore:   now.Add(certNotBeforeOffset),
 		NotAfter:    now.AddDate(years, 0, 0),
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: extKeyUsage,
+		KeyUsage:    keyUsage,
 		DNSNames:    append([]string(nil), dnsNames...),
 		IPAddresses: append([]net.IP(nil), ipAddresses...),
 	}
@@ -1525,6 +1568,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		ID:            id,
 		CommonName:    commonName,
 		SANs:          sans,
+		Client:        client,
 		ValidityYears: years,
 		CreatedAt:     now,
 	}
@@ -1761,6 +1805,63 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 		return err
 	}
 	return nil
+}
+
+// writeCertificateP12 exports a certificate as a PKCS#12 (.p12) file so it
+// can be imported directly into browsers and OS keychains for mutual TLS.
+func writeCertificateP12(w http.ResponseWriter, certDir, safeID, dataDir, exportPassphrase string) error {
+	keyPEM, err := os.ReadFile(filepath.Join(certDir, "key.pem"))
+	if err != nil {
+		return err
+	}
+	privateKey, err := parseUnencryptedPrivateKeyPEM(keyPEM)
+	if err != nil {
+		return errors.New("certificate private key is encrypted: remove or disable the key passphrase before exporting a .p12")
+	}
+
+	certPEM, err := os.ReadFile(filepath.Join(certDir, "cert.pem"))
+	if err != nil {
+		return err
+	}
+	certBlock, _ := pem.Decode(certPEM)
+	if certBlock == nil {
+		return errors.New("certificate PEM is invalid")
+	}
+	leaf, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return err
+	}
+
+	var caCerts []*x509.Certificate
+	caPEM, err := os.ReadFile(filepath.Join(dataDir, "ca-cert.pem"))
+	if err == nil {
+		if block, _ := pem.Decode(caPEM); block != nil {
+			if caCert, perr := x509.ParseCertificate(block.Bytes); perr == nil {
+				caCerts = append(caCerts, caCert)
+			}
+		}
+	}
+	if intPEM, err := os.ReadFile(filepath.Join(dataDir, "intermediate-cert.pem")); err == nil {
+		if block, _ := pem.Decode(intPEM); block != nil {
+			if intCert, perr := x509.ParseCertificate(block.Bytes); perr == nil {
+				caCerts = append([]*x509.Certificate{intCert}, caCerts...)
+			}
+		}
+	}
+
+	p12Password := exportPassphrase
+	if p12Password == "" {
+		p12Password = pkcs12.DefaultPassword
+	}
+	pfxData, err := pkcs12.Modern2026.Encode(privateKey, leaf, caCerts, p12Password)
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/x-pkcs12")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+safeID+".p12\"")
+	_, err = w.Write(pfxData)
+	return err
 }
 
 // caArchiveName returns the explicit list of top-level files that make up a
