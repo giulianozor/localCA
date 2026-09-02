@@ -89,10 +89,23 @@ type certMetadata struct {
 	ID            string     `json:"id"`
 	CommonName    string     `json:"common_name"`
 	SANs          []string   `json:"sans"`
-	Client        bool       `json:"client,omitempty"`
+	Type          string     `json:"type,omitempty"`   // server, client, dot1x
+	Client        bool       `json:"client,omitempty"` // legacy field, kept for older metadata files
 	ValidityYears int        `json:"validity_years"`
 	CreatedAt     time.Time  `json:"created_at"`
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
+}
+
+// CertType returns the normalized certificate type, mapping legacy metadata
+// (which only tracked the Client flag) onto the current "type" values.
+func (c certMetadata) CertType() string {
+	if c.Type != "" {
+		return c.Type
+	}
+	if c.Client {
+		return "client"
+	}
+	return "server"
 }
 
 func (c config) signerPassphraseRequired(hasIntermediate bool) bool {
@@ -523,11 +536,21 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isClient := r.FormValue("cert_type") == "client"
+	certType := r.FormValue("cert_type")
+	if certType == "" {
+		certType = "server"
+	}
+	switch certType {
+	case "server", "client", "dot1x", "codeSigning":
+	default:
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_type")), http.StatusSeeOther)
+		return
+	}
+	isIdentityCert := certType != "server"
 	sansInput := strings.TrimSpace(r.FormValue("sans"))
 	var sans []string
 	var sansErr error
-	if isClient {
+	if isIdentityCert {
 		sans, sansErr = parseSANsOptional(sansInput)
 	} else {
 		sans, sansErr = parseSANs(sansInput)
@@ -540,8 +563,8 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 	if commonName == "" {
 		if len(sans) > 0 {
 			commonName = sans[0]
-		} else if isClient {
-			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.client_cn_required")), http.StatusSeeOther)
+		} else if isIdentityCert {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.identity_cn_required")), http.StatusSeeOther)
 			return
 		}
 	}
@@ -566,7 +589,7 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.createServerCert(commonName, sans, years, keyPassphrase, signerPassphrase, useIntermediate, isClient); err != nil {
+	if err := a.createServerCert(commonName, sans, years, keyPassphrase, signerPassphrase, useIntermediate, certType); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -812,7 +835,7 @@ func (a *app) handleRenewCert(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, a.hasIntermediate(), meta.Client); err != nil {
+	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, a.hasIntermediate(), meta.CertType()); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -1465,7 +1488,7 @@ func (a *app) renewIntermediateCA(caPassphrase string) error {
 	return nil
 }
 
-func (a *app) createServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string, useIntermediate bool, client bool) error {
+func (a *app) createServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string, useIntermediate bool, certType string) error {
 	signerCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
 	if err != nil {
 		return errors.New("CA certificate not found")
@@ -1510,9 +1533,19 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 
 	now := time.Now()
 	dnsNames, ipAddresses := splitSANs(sans)
-	extKeyUsage := []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
-	keyUsage := x509.KeyUsageDigitalSignature
-	if !client {
+	// server (TLS) certs authenticate Web/API servers; client (mTLS) and
+	// 802.1X (EAP-TLS) certs authenticate identity (devices/users) to a network;
+	// codeSigning certs sign software.
+	var extKeyUsage []x509.ExtKeyUsage
+	var keyUsage x509.KeyUsage
+	switch certType {
+	case "client", "dot1x":
+		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
+		keyUsage = x509.KeyUsageDigitalSignature
+	case "codeSigning":
+		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}
+		keyUsage = x509.KeyUsageDigitalSignature
+	default: // server
 		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 		keyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
 	}
@@ -1568,7 +1601,8 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		ID:            id,
 		CommonName:    commonName,
 		SANs:          sans,
-		Client:        client,
+		Type:          certType,
+		Client:        certType == "client",
 		ValidityYears: years,
 		CreatedAt:     now,
 	}
@@ -1584,6 +1618,7 @@ func (a *app) loadCertMetadata(certDir string) (certMetadata, error) {
 	if err := json.Unmarshal(metaJSON, &meta); err != nil {
 		return certMetadata{}, err
 	}
+	meta.Type = meta.CertType()
 	return meta, nil
 }
 

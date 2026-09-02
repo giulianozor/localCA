@@ -17,7 +17,7 @@ func TestCreateClientCertificate(t *testing.T) {
 		t.Fatalf("createCA() error = %v", err)
 	}
 	// Client certificate with no SANs (identity is the CommonName).
-	if err := a.createServerCert("alice@example.com", nil, 1, "", "", false, true); err != nil {
+	if err := a.createServerCert("alice@example.com", nil, 1, "", "", false, "client"); err != nil {
 		t.Fatalf("createServerCert(client) error = %v", err)
 	}
 
@@ -26,8 +26,8 @@ func TestCreateClientCertificate(t *testing.T) {
 		t.Fatalf("expected one cert, got %d (err=%v)", len(certs), err)
 	}
 	meta := certs[0]
-	if !meta.Client {
-		t.Fatal("expected metadata Client=true for client certificate")
+	if meta.CertType() != "client" {
+		t.Fatal("expected metadata type=client for client certificate")
 	}
 
 	cert := parseCertificatePEM(t, filepath.Join(a.dataDir, "certs", meta.ID, "cert.pem"))
@@ -47,14 +47,14 @@ func TestRenewClientCertificatePreservesClientFlag(t *testing.T) {
 	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
 		t.Fatalf("createCA() error = %v", err)
 	}
-	if err := a.createServerCert("alice@example.com", nil, 1, "", "", false, true); err != nil {
+	if err := a.createServerCert("alice@example.com", nil, 1, "", "", false, "client"); err != nil {
 		t.Fatalf("createServerCert(client) error = %v", err)
 	}
 	certs, _ := a.listCerts()
 	meta := certs[0]
 
 	// Renew using the stored metadata (same code path as the renew handler).
-	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, "", "", false, meta.Client); err != nil {
+	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, "", "", false, meta.CertType()); err != nil {
 		t.Fatalf("renew client cert error = %v", err)
 	}
 
@@ -63,8 +63,8 @@ func TestRenewClientCertificatePreservesClientFlag(t *testing.T) {
 		t.Fatalf("expected 2 certs after renew, got %d (err=%v)", len(renewed), err)
 	}
 	for _, c := range renewed {
-		if c.ID != meta.ID && !c.Client {
-			t.Fatalf("renewed certificate %s lost the client flag", c.ID)
+		if c.ID != meta.ID && c.CertType() != "client" {
+			t.Fatalf("renewed certificate %s lost the client type", c.ID)
 		}
 	}
 }
@@ -74,7 +74,7 @@ func TestExportClientCertP12(t *testing.T) {
 	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
 		t.Fatalf("createCA() error = %v", err)
 	}
-	if err := a.createServerCert("alice@example.com", nil, 1, "", "", false, true); err != nil {
+	if err := a.createServerCert("alice@example.com", nil, 1, "", "", false, "client"); err != nil {
 		t.Fatalf("createServerCert(client) error = %v", err)
 	}
 	certs, _ := a.listCerts()
@@ -121,7 +121,7 @@ func TestExportClientCertP12RequiresUnencryptedKey(t *testing.T) {
 		t.Fatalf("createCA() error = %v", err)
 	}
 	// Client cert with an encrypted private key.
-	if err := a.createServerCert("bob@example.com", nil, 1, "keypass", "", false, true); err != nil {
+	if err := a.createServerCert("bob@example.com", nil, 1, "keypass", "", false, "client"); err != nil {
 		t.Fatalf("createServerCert(client, keypass) error = %v", err)
 	}
 	certs, _ := a.listCerts()

@@ -1,13 +1,13 @@
 {{range .Certificates}}
   <tr>
     <td class="dim" style="font-size:0.8rem;">{{.ID}}</td>
-    <td><strong>{{.CommonName}}</strong>{{if .Client}} <span class="badge badge-client">{{index $.T "cert.type.client_badge"}}</span>{{end}}</td>
+    <td><strong>{{.CommonName}}</strong>{{if eq .Type "client"}} <span class="badge badge-client">{{index $.T "cert.type.badge_client"}}</span>{{else if eq .Type "dot1x"}} <span class="badge badge-dot1x">{{index $.T "cert.type.badge_dot1x"}}</span>{{else if eq .Type "codeSigning"}} <span class="badge badge-code">{{index $.T "cert.type.badge_code"}}</span>{{end}}</td>
     <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
     <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
     <td>{{if .RevokedAt}}<span class="badge badge-revoked">{{index $.T "cert.status.revoked"}}</span>{{else}}<span class="badge badge-active">{{index $.T "cert.status.active"}}</span>{{end}}</td>
     <td class="cert-actions">
       <button type="button" class="js-export-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">⬇ tar.gz</button>
-      {{if .Client}}
+      {{if or (eq .Type "client") (eq .Type "dot1x")}}
         <button type="button" class="js-p12-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔐 p12</button>
       {{end}}
       <button type="button" class="js-passphrase-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔑 {{index $.T "cert.list.passphrase"}}</button>

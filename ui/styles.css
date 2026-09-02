@@ -285,6 +285,16 @@ a:hover {
   color: #d8b4fe;
 }
 
+.badge-dot1x {
+  background: rgba(34,211,238,.15);
+  color: #67e8f9;
+}
+
+.badge-code {
+  background: rgba(251,191,36,.15);
+  color: #fcd34d;
+}
+
 .badge-revoked {
   background: rgba(239,68,68,.15);
   color: #f87171;

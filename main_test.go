@@ -288,7 +288,7 @@ func TestCreateServerCertUsesIntermediateAsIssuer(t *testing.T) {
 	if err := a.createIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
 		t.Fatalf("createIntermediateCA() error = %v", err)
 	}
-	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "", a.hasIntermediate(), false); err != nil {
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "", a.hasIntermediate(), "server"); err != nil {
 		t.Fatalf("createServerCert() error = %v", err)
 	}
 	certs, err := a.listCerts()
@@ -314,10 +314,10 @@ func TestCreateServerCertRequiresSignerPassphrase(t *testing.T) {
 	if err := a.createCA("Test Root", "localCA", "IT", "root-pass"); err != nil {
 		t.Fatalf("createCA() error = %v", err)
 	}
-	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "", a.hasIntermediate(), false); err == nil {
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "", a.hasIntermediate(), "server"); err == nil {
 		t.Fatal("createServerCert() expected error when signer passphrase is missing")
 	}
-	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "root-pass", a.hasIntermediate(), false); err != nil {
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "", "root-pass", a.hasIntermediate(), "server"); err != nil {
 		t.Fatalf("createServerCert() with signer passphrase error = %v", err)
 	}
 }
@@ -358,13 +358,13 @@ func TestChangeCAPassphraseSetAndRemove(t *testing.T) {
 	if err := a.changeCAPassphrase("initial-pass", "new-pass"); err != nil {
 		t.Fatalf("changeCAPassphrase(set) error = %v", err)
 	}
-	if err := a.createServerCert("with-new-pass.local", []string{"with-new-pass.local"}, 1, "", "new-pass", a.hasIntermediate(), false); err != nil {
+	if err := a.createServerCert("with-new-pass.local", []string{"with-new-pass.local"}, 1, "", "new-pass", a.hasIntermediate(), "server"); err != nil {
 		t.Fatalf("createServerCert() with new signer passphrase error = %v", err)
 	}
 	if err := a.changeCAPassphrase("new-pass", ""); err != nil {
 		t.Fatalf("changeCAPassphrase(remove) error = %v", err)
 	}
-	if err := a.createServerCert("without-pass.local", []string{"without-pass.local"}, 1, "", "", a.hasIntermediate(), false); err != nil {
+	if err := a.createServerCert("without-pass.local", []string{"without-pass.local"}, 1, "", "", a.hasIntermediate(), "server"); err != nil {
 		t.Fatalf("createServerCert() without signer passphrase error = %v", err)
 	}
 }
@@ -416,7 +416,7 @@ func TestHandleDownloadArchiveRejectsExportPassphraseForEncryptedKey(t *testing.
 	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
 		t.Fatalf("createCA() error = %v", err)
 	}
-	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "leaf-pass", "", a.hasIntermediate(), false); err != nil {
+	if err := a.createServerCert("leaf.local", []string{"leaf.local"}, 1, "leaf-pass", "", a.hasIntermediate(), "server"); err != nil {
 		t.Fatalf("createServerCert() error = %v", err)
 	}
 	certs, err := a.listCerts()
@@ -448,7 +448,7 @@ func createTestCertificate(t *testing.T) (*app, string) {
 		"192.168.1.100",
 		"10.0.0.50",
 		"127.0.0.1",
-	}, 1, "", "", a.hasIntermediate(), false); err != nil {
+	}, 1, "", "", a.hasIntermediate(), "server"); err != nil {
 		t.Fatalf("createServerCert() error = %v", err)
 	}
 	certs, err := a.listCerts()
@@ -724,10 +724,10 @@ func TestCAIntermediateAndSignerChoice(t *testing.T) {
 	})
 
 	t.Run("signer choice: false signs with CA, true signs with intermediate", func(t *testing.T) {
-		if err := a.createServerCert("ca-signed.local", []string{"ca-signed.local"}, 1, "", "", false, false); err != nil {
+		if err := a.createServerCert("ca-signed.local", []string{"ca-signed.local"}, 1, "", "", false, "server"); err != nil {
 			t.Fatalf("createServerCert(useIntermediate=false) error = %v", err)
 		}
-		if err := a.createServerCert("int-signed.local", []string{"int-signed.local"}, 1, "", "", true, false); err != nil {
+		if err := a.createServerCert("int-signed.local", []string{"int-signed.local"}, 1, "", "", true, "server"); err != nil {
 			t.Fatalf("createServerCert(useIntermediate=true) error = %v", err)
 		}
 

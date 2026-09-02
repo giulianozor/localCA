@@ -122,19 +122,15 @@
     updatePassphraseField();
   }
 
-  // --- Certificate type toggle (server vs client) ---
+  // --- Certificate type toggle (server vs identity/signing) ---
   const certTypeRadios = document.querySelectorAll(".js-cert-type-radio");
   const certSansInput = document.querySelector('form[action="/certs/create"] input[name="sans"]');
   if (certTypeRadios.length > 0 && certSansInput) {
     const serverLabel = certSansInput.getAttribute("placeholder");
     const updateType = () => {
       const selected = document.querySelector(".js-cert-type-radio:checked");
-      const isClient = selected && selected.value === "client";
-      if (isClient) {
-        certSansInput.setAttribute("placeholder", "client@example.com, username (optional)");
-      } else {
-        certSansInput.setAttribute("placeholder", serverLabel);
-      }
+      const isServer = !selected || selected.value === "server";
+      certSansInput.setAttribute("placeholder", isServer ? serverLabel : "email@example.com, name (optional)");
     };
     certTypeRadios.forEach((r) => r.addEventListener("change", updateType));
     updateType();
