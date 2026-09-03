@@ -6,7 +6,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"log"
-	"math/big"
 	"os"
 	"path/filepath"
 	"time"
@@ -76,8 +75,12 @@ func (a *App) GenerateCRL(lang, signerPassphrase string) error {
 	}
 
 	now := time.Now()
+	number, err := randomSerialNumber()
+	if err != nil {
+		return err
+	}
 	tmpl := &x509.RevocationList{
-		Number:     big.NewInt(now.Unix()),
+		Number:     number,
 		ThisUpdate: now,
 		// NextUpdate tells CRL consumers how long this CRL is valid.
 		NextUpdate:                now.AddDate(0, 0, CRLNextUpdateDays),

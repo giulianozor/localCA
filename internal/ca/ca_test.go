@@ -305,6 +305,57 @@ func TestRenewIntermediateCAWithoutIntermediateFails(t *testing.T) {
 	}
 }
 
+func TestRenewCARegeneratesIntermediateChain(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &App{DataDir: tempDir, DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	if err := a.CreateIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
+		t.Fatalf("CreateIntermediateCA() error = %v", err)
+	}
+
+	if err := a.RenewCA(""); err != nil {
+		t.Fatalf("RenewCA() error = %v", err)
+	}
+
+	// The second block in intermediate-chain.pem must be the renewed root.
+	newCA := parseCertificatePEM(t, filepath.Join(tempDir, "ca-cert.pem"))
+	chainPEM, err := os.ReadFile(filepath.Join(tempDir, "intermediate-chain.pem"))
+	if err != nil {
+		t.Fatalf("read intermediate-chain.pem: %v", err)
+	}
+	blocks := pemBlockList(t, chainPEM)
+	if len(blocks) < 2 {
+		t.Fatalf("intermediate-chain.pem should have 2 blocks, got %d", len(blocks))
+	}
+	root, err := x509.ParseCertificate(blocks[1])
+	if err != nil {
+		t.Fatalf("parse chain root: %v", err)
+	}
+	if root.SerialNumber.Cmp(newCA.SerialNumber) != 0 {
+		t.Fatal("intermediate-chain.pem root cert is stale after RenewCA")
+	}
+}
+
+func pemBlockList(t *testing.T, data []byte) [][]byte {
+	t.Helper()
+	var out [][]byte
+	rest := data
+	for {
+		block, remaining := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		out = append(out, block.Bytes)
+		rest = remaining
+	}
+	return out
+}
+
 func TestCAIntermediateAndSignerChoice(t *testing.T) {
 	tempDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {

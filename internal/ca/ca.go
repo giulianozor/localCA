@@ -13,15 +13,26 @@ import (
 	"time"
 )
 
+func randomSerialNumber() (*big.Int, error) {
+	// 128-bit serial numbers make collisions essentially impossible even
+	// across concurrent requests.
+	maxSerial := new(big.Int).Lsh(big.NewInt(1), 128)
+	return rand.Int(rand.Reader, maxSerial)
+}
+
 func (a *App) CreateCA(cn, org, country, passphrase string) error {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
 		return err
 	}
 
+	serial, err := randomSerialNumber()
+	if err != nil {
+		return err
+	}
 	now := time.Now()
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()),
+		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   cn,
 			Organization: []string{org},
@@ -91,9 +102,13 @@ func (a *App) CreateIntermediateCA(cn, org, country, caPassphrase, passphrase st
 	if err != nil {
 		return err
 	}
+	serial, err := randomSerialNumber()
+	if err != nil {
+		return err
+	}
 	now := time.Now()
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()),
+		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   cn,
 			Organization: []string{org},
@@ -161,8 +176,12 @@ func (a *App) RenewCA(caPassphrase string) error {
 	}
 
 	now := time.Now()
+	serial, err := randomSerialNumber()
+	if err != nil {
+		return err
+	}
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()),
+		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   cfg.CACommonName,
 			Organization: []string{cfg.Organization},
@@ -184,6 +203,17 @@ func (a *App) RenewCA(caPassphrase string) error {
 	}
 	if err := os.WriteFile(filepath.Join(a.DataDir, "ca-cert.der"), der, 0o640); err != nil {
 		return err
+	}
+	if a.HasIntermediate() {
+		intCertPEM, err := os.ReadFile(filepath.Join(a.DataDir, "intermediate-cert.pem"))
+		if err != nil {
+			return errors.New("intermediate certificate not found")
+		}
+		chain := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+		chain = append(intCertPEM, chain...)
+		if err := os.WriteFile(filepath.Join(a.DataDir, "intermediate-chain.pem"), chain, 0o640); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -236,8 +266,12 @@ func (a *App) RenewIntermediateCA(caPassphrase string) error {
 	}
 
 	now := time.Now()
+	serial, err := randomSerialNumber()
+	if err != nil {
+		return err
+	}
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()),
+		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   cfg.IntermediateCommonName,
 			Organization: []string{cfg.IntermediateOrganization},

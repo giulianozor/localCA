@@ -126,6 +126,62 @@ func TestCAImportValidatesKeyMatch(t *testing.T) {
 	}
 }
 
+func TestCAImportPassphraseProtectedCA(t *testing.T) {
+	// A CA whose key is encrypted with a passphrase must still be importable.
+	srcDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(srcDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	src := &App{DataDir: srcDir, DefaultLang: "en"}
+	if err := src.CreateCA("Test Root", "localCA", "IT", "ca-secret"); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	raw, err := src.BuildCAArchive()
+	if err != nil {
+		t.Fatalf("BuildCAArchive() error = %v", err)
+	}
+
+	dst := &App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := dst.ImportCAArchive(bytes.NewReader(raw), ""); err != nil {
+		t.Fatalf("ImportCAArchive() with passphrase-protected CA error = %v", err)
+	}
+	for _, name := range []string{"config.json", "ca-cert.pem", "ca-key.pem"} {
+		srcData, err := os.ReadFile(filepath.Join(srcDir, name))
+		if err != nil {
+			t.Fatalf("read src %s: %v", name, err)
+		}
+		dstData, err := os.ReadFile(filepath.Join(dst.DataDir, name))
+		if err != nil {
+			t.Fatalf("read dst %s: %v", name, err)
+		}
+		if !bytes.Equal(srcData, dstData) {
+			t.Fatalf("%s content mismatch after import", name)
+		}
+	}
+}
+
+func TestCAImportCleansUpWhenVerificationFails(t *testing.T) {
+	src, _ := buildTestCA(t)
+	raw, err := src.BuildCAArchive()
+	if err != nil {
+		t.Fatalf("BuildCAArchive() error = %v", err)
+	}
+	tampered := tamperTarEntry(t, raw, "ca-key.pem", []byte("-----BEGIN RSA PRIVATE KEY-----\nAA==\n-----END RSA PRIVATE KEY-----\n"))
+
+	dst := &App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := dst.ImportCAArchive(bytes.NewReader(tampered), ""); err == nil {
+		t.Fatal("import with mismatched CA key succeeded, want error")
+	}
+	// A failed verification must not leave a half-initialized CA behind,
+	// otherwise a retry would be blocked by the "already exists" guard.
+	if _, err := os.Stat(filepath.Join(dst.DataDir, "ca-key.pem")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("ca-key.pem left behind after failed import (err=%v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst.DataDir, "config.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("config.json left behind after failed import (err=%v)", err)
+	}
+}
+
 func assertCAEqual(t *testing.T, src, dst *App) {
 	t.Helper()
 	for _, name := range CAArchiveFiles() {

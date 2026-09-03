@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -60,6 +59,10 @@ func (a *App) CreateServerCert(commonName string, sans []string, years int, keyP
 
 	now := time.Now()
 	dnsNames, ipAddresses := SplitSANs(sans)
+	serial, err := randomSerialNumber()
+	if err != nil {
+		return err
+	}
 	// server (TLS) certs authenticate Web/API servers; client (mTLS) and
 	// 802.1X (EAP-TLS) certs authenticate identity (devices/users) to a network;
 	// codeSigning certs sign software.
@@ -77,7 +80,7 @@ func (a *App) CreateServerCert(commonName string, sans []string, years int, keyP
 		keyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
 	}
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()),
+		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName: commonName,
 		},

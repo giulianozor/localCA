@@ -220,6 +220,7 @@ func (a *App) ImportCAArchive(r io.Reader, importPassphrase string) error {
 			return err
 		}
 	}
+	written := make([]string, 0, len(files))
 	for _, f := range files {
 		mode := f.mode
 		if mode == 0 {
@@ -231,16 +232,29 @@ func (a *App) ImportCAArchive(r io.Reader, importPassphrase string) error {
 		if err := os.WriteFile(f.path, f.data, mode); err != nil {
 			return err
 		}
+		written = append(written, f.path)
+	}
+
+	cleanup := func() {
+		for _, p := range written {
+			_ = os.Remove(p)
+		}
+		for _, d := range dirs {
+			_ = os.Remove(d) // only removes now-empty directories
+		}
 	}
 
 	_, has, err := a.LoadConfig()
 	if err != nil {
+		cleanup()
 		return err
 	}
 	if !has {
+		cleanup()
 		return errors.New("imported archive contains no valid configuration")
 	}
 	if err := a.VerifyImportedCA(); err != nil {
+		cleanup()
 		return err
 	}
 	return nil
@@ -264,6 +278,17 @@ func (a *App) VerifyImportedCA() error {
 	if err != nil {
 		return errors.New("imported CA key missing")
 	}
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return errors.New("imported CA key is invalid")
+	}
+	if x509.IsEncryptedPEMBlock(keyBlock) {
+		// The CA key is passphrase-protected, so it cannot be decrypted here.
+		// Treat the archive as valid: an encrypted key that fails to decrypt
+		// will be caught later when the operator supplies the passphrase.
+		return nil
+	}
+
 	caKey, err := ParseUnencryptedPrivateKeyPEM(keyPEM)
 	if err != nil {
 		return errors.New("imported CA key is encrypted or invalid")
