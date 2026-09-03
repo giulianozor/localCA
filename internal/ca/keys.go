@@ -75,7 +75,35 @@ func UpdatePrivateKeyPassphrase(path, currentPassphrase, newPassphrase, missingE
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, updatedKeyPEM, 0o600)
+	return atomicWriteFile(path, updatedKeyPEM, 0o600)
+}
+
+// atomicWriteFile writes data to a temp file in the same directory and renames
+// it over path, so an interrupted write never leaves path partially written.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 func EncodePrivateKeyPEM(key *rsa.PrivateKey, passphrase string) ([]byte, error) {
