@@ -15,6 +15,9 @@ import (
 )
 
 func (a *App) CreateServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string, useIntermediate bool, certType string) error {
+	if years < 1 || years > MaxCertValidityYear {
+		return fmt.Errorf("validity must be between 1 and %d years", MaxCertValidityYear)
+	}
 	signerCertPEM, err := os.ReadFile(filepath.Join(a.DataDir, "ca-cert.pem"))
 	if err != nil {
 		return errors.New("CA certificate not found")

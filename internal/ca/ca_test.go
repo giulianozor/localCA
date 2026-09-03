@@ -305,6 +305,18 @@ func TestRenewIntermediateCAWithoutIntermediateFails(t *testing.T) {
 	}
 }
 
+func TestCreateServerCertRejectsInvalidValidity(t *testing.T) {
+	a := &App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	for _, years := range []int{0, -1, MaxCertValidityYear + 1} {
+		if err := a.CreateServerCert("bad.local", []string{"bad.local"}, years, "", "", false, "server"); err == nil {
+			t.Fatalf("CreateServerCert() with years=%d succeeded, want error", years)
+		}
+	}
+}
+
 func TestRenewCARegeneratesIntermediateChain(t *testing.T) {
 	tempDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {

@@ -50,6 +50,37 @@ func TestCAArchiveRoundTripPlain(t *testing.T) {
 	assertCAEqual(t, src, dst)
 }
 
+func TestBuildCAArchiveWithoutCertsDir(t *testing.T) {
+	// A CA that has not issued any certificates (no certs/ directory) must
+	// still be archivable.
+	a := &App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	if _, err := a.BuildCAArchive(); err != nil {
+		t.Fatalf("BuildCAArchive() without certs dir error = %v", err)
+	}
+}
+
+func TestListCertsSkipsCorruptMetadata(t *testing.T) {
+	a := &App{DataDir: t.TempDir(), DefaultLang: "en"}
+	badDir := filepath.Join(a.DataDir, "certs", "cert-bad")
+	if err := os.MkdirAll(badDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(badDir, "metadata.json"), []byte("{not json"), 0o640); err != nil {
+		t.Fatalf("write metadata: %v", err)
+	}
+
+	certs, err := a.ListCerts()
+	if err != nil {
+		t.Fatalf("ListCerts() error = %v", err)
+	}
+	if len(certs) != 0 {
+		t.Fatalf("ListCerts() len = %d, want 0 (corrupt metadata should be skipped)", len(certs))
+	}
+}
+
 func TestCAArchiveRoundTripEncrypted(t *testing.T) {
 	src, _ := buildTestCA(t)
 

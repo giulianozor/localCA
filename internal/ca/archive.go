@@ -53,7 +53,12 @@ func (a *App) BuildCAArchive() ([]byte, error) {
 
 	entries, err := os.ReadDir(filepath.Join(a.DataDir, "certs"))
 	if err != nil {
-		return nil, err
+		if errors.Is(err, os.ErrNotExist) {
+			// No issued certificates yet (e.g. a root CA with no leaves).
+			entries = nil
+		} else {
+			return nil, err
+		}
 	}
 	for _, e := range entries {
 		if !e.IsDir() {

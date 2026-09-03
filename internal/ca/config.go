@@ -3,6 +3,7 @@ package ca
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -113,12 +114,15 @@ func (a *App) ListCerts() ([]CertMetadata, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(a.DataDir, "certs", entry.Name(), "metadata.json"))
+		metaDir := filepath.Join(a.DataDir, "certs", entry.Name())
+		b, err := os.ReadFile(filepath.Join(metaDir, "metadata.json"))
 		if err != nil {
+			log.Printf("ListCerts: skipping %s: %v", entry.Name(), err)
 			continue
 		}
 		var m CertMetadata
 		if err := json.Unmarshal(b, &m); err != nil {
+			log.Printf("ListCerts: skipping %s: invalid metadata: %v", entry.Name(), err)
 			continue
 		}
 		certs = append(certs, m)
