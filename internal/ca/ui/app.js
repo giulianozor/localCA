@@ -155,29 +155,29 @@
     }
   });
 
-  // --- Signer radio toggle for cert creation ---
-  const signerRadios = document.querySelectorAll(".js-signer-radio");
-  const signerPassWrap = document.querySelector(".js-signer-passphrase-wrap");
-  const signerPassLabel = document.querySelector(".js-signer-passphrase-label");
-
-  if (signerRadios.length > 0 && signerPassWrap) {
-    const caLabel = signerPassLabel.textContent;
+  // --- Signer radio toggle for cert creation (one group per form) ---
+  document.querySelectorAll("form").forEach((form) => {
+    const signerRadios = form.querySelectorAll(".js-signer-radio");
+    const signerPassWrap = form.querySelector(".js-signer-passphrase-wrap");
+    const signerPassLabel = form.querySelector(".js-signer-passphrase-label");
+    if (signerRadios.length === 0 || !signerPassWrap || !signerPassLabel) return;
+    const originalLabel = signerPassLabel.textContent;
 
     const updatePassphraseField = () => {
-      const selected = document.querySelector(".js-signer-radio:checked");
+      const selected = form.querySelector(".js-signer-radio:checked");
       if (!selected) return;
       const needsPassphrase = selected.getAttribute("data-passphrase") === "true";
       signerPassWrap.style.display = needsPassphrase ? "" : "none";
       if (selected.value === "intermediate") {
         signerPassLabel.textContent = "Intermediate key passphrase";
       } else {
-        signerPassLabel.textContent = caLabel;
+        signerPassLabel.textContent = originalLabel;
       }
     };
 
     signerRadios.forEach((r) => r.addEventListener("change", updatePassphraseField));
     updatePassphraseField();
-  }
+  });
 
   // --- Reusable modal setup helper with focus management ---
   const setupModal = (overlaySelector, btnSelector, closeSelector, getData) => {
