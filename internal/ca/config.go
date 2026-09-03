@@ -80,7 +80,7 @@ func (a *App) SaveConfig(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(a.DataDir, "config.json"), cfgJSON, 0o640)
+	return atomicWriteFile(filepath.Join(a.DataDir, "config.json"), cfgJSON, 0o640)
 }
 
 func (a *App) LoadCertMetadata(certDir string) (CertMetadata, error) {
@@ -101,7 +101,7 @@ func (a *App) SaveCertMetadata(certDir string, meta CertMetadata) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(certDir, "metadata.json"), metaJSON, 0o640)
+	return atomicWriteFile(filepath.Join(certDir, "metadata.json"), metaJSON, 0o640)
 }
 
 func (a *App) ListCerts() ([]CertMetadata, error) {
