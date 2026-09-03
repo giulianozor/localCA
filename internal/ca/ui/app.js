@@ -168,11 +168,10 @@
       if (!selected) return;
       const needsPassphrase = selected.getAttribute("data-passphrase") === "true";
       signerPassWrap.style.display = needsPassphrase ? "" : "none";
-      if (selected.value === "intermediate") {
-        signerPassLabel.textContent = "Intermediate key passphrase";
-      } else {
-        signerPassLabel.textContent = originalLabel;
-      }
+      // Keep the localized label; it already describes the field for either
+      // signer, so the intermediate selection must not override it with a
+      // hard-coded English string.
+      signerPassLabel.textContent = originalLabel;
     };
 
     signerRadios.forEach((r) => r.addEventListener("change", updatePassphraseField));
