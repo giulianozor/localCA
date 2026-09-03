@@ -45,3 +45,26 @@ The provided data directory contains:
 - `ca-key.pem`
 - `intermediate-cert.pem`, `intermediate-key.pem`, `intermediate-chain.pem` (if created)
 - `certs/<id>/...` for each issued certificate, including CSR (`csr.pem`), certificate (`cert.pem`), private key (`key.pem`) and metadata
+
+## Project structure
+
+The application is a single `main` package organized into small files grouped by responsibility:
+
+| File | Responsibility |
+|------|----------------|
+| `main.go` | Entry point, CLI flag parsing, HTTP routing |
+| `app.go` | Core types (`app`, `config`, `certMetadata`, template contexts), constants, sentinel errors |
+| `config.go` | Configuration & metadata persistence, translation loading, certificate listing |
+| `ca.go` | Root/intermediate CA creation and renewal (X.509) |
+| `crypto.go` | Issued certificate (leaf) creation and renewal (X.509 + CSR) |
+| `keys.go` | RSA key parsing, PEM encoding, passphrase management |
+| `crl.go` | Certificate Revocation List generation |
+| `parse.go` | Input validation, SAN parsing, certificate filtering, directory resolution |
+| `handlers.go` | Generic HTTP handlers: index, language, download |
+| `handlers_ca.go` | HTTP handlers for CA / intermediate lifecycle |
+| `handlers_cert.go` | HTTP handlers for issued certificate lifecycle & CRL |
+| `render.go` | Template rendering, static asset serving, embedded UI |
+| `archive.go` | Whole-CA backup/restore (tar.gz, encrypted or plain) |
+| `export.go` | Per-certificate export (tar.gz and PKCS#12) and archive encryption |
+
+The UI (`ui/`) and translations (`i18n/`) are embedded into the binary via `//go:embed`.

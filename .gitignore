@@ -9,6 +9,9 @@
 *.dylib
 /localCA
 
+# runtime data directory
+/gzorzi.net/
+
 # Test binary, built with `go test -c`
 *.test
 
