@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"io"
 	"mime/multipart"
@@ -210,6 +211,51 @@ func TestRenewCertificateKeepsOriginalSigner(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("renewed certificate not found")
+	}
+}
+
+func TestRenewCertificateLegacyMetadataUsesDefaultValidity(t *testing.T) {
+	a, certID := createTestCertificate(t)
+
+	// Rewrite metadata without the validity_years field to simulate a cert
+	// created before validity tracking. Renewing must not fail on years=0.
+	meta, err := a.LoadCertMetadata(filepath.Join(a.DataDir, "certs", certID))
+	if err != nil {
+		t.Fatalf("LoadCertMetadata() error = %v", err)
+	}
+	var raw map[string]interface{}
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
+	}
+	if err := json.Unmarshal(metaBytes, &raw); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	delete(raw, "validity_years")
+	legacyBytes, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("marshal legacy metadata: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(a.DataDir, "certs", certID, "metadata.json"), legacyBytes, 0o640); err != nil {
+		t.Fatalf("write legacy metadata: %v", err)
+	}
+
+	renewForm := url.Values{}
+	renewForm.Set("id", certID)
+	renewReq := httptest.NewRequest(http.MethodPost, "/certs/renew", strings.NewReader(renewForm.Encode()))
+	renewReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	renewRR := httptest.NewRecorder()
+	handleRenewCert(a, renewRR, renewReq)
+	if renewRR.Code != http.StatusSeeOther {
+		t.Fatalf("handleRenewCert() status = %d, want %d, location=%s", renewRR.Code, http.StatusSeeOther, renewRR.Header().Get("Location"))
+	}
+
+	certs, err := a.ListCerts()
+	if err != nil {
+		t.Fatalf("ListCerts() error = %v", err)
+	}
+	if len(certs) != 2 {
+		t.Fatalf("ListCerts() len = %d, want 2 after successful legacy renewal", len(certs))
 	}
 }
 

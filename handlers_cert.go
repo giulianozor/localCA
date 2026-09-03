@@ -234,7 +234,7 @@ func handleRenewCert(a *ca.App, w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.CreateServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, useIntermediate, meta.CertType()); err != nil {
+	if err := a.CreateServerCert(meta.CommonName, meta.SANs, renewValidityYears(meta), keyPassphrase, signerPassphrase, useIntermediate, meta.CertType()); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -247,6 +247,16 @@ func handleRenewCert(a *ca.App, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.Translate(lang, "msg.cert_renewed"), safeID)), http.StatusSeeOther)
+}
+
+// renewValidityYears returns the validity to use when renewing a certificate,
+// falling back to the default for legacy metadata that predates the
+// validity_years field (or an out-of-range stored value).
+func renewValidityYears(meta ca.CertMetadata) int {
+	if meta.ValidityYears < 1 || meta.ValidityYears > ca.MaxCertValidityYear {
+		return ca.DefaultCertValidityYears
+	}
+	return meta.ValidityYears
 }
 
 func handleGenerateCRL(a *ca.App, w http.ResponseWriter, r *http.Request) {
