@@ -525,6 +525,90 @@ func TestGenerateCRL(t *testing.T) {
 	}
 }
 
+func TestGenerateCRLOnlyListsCertsForItsSigner(t *testing.T) {
+	translations, err := LoadTranslations()
+	if err != nil {
+		t.Fatalf("LoadTranslations() error = %v", err)
+	}
+	a := &App{DataDir: t.TempDir(), DefaultLang: "en", Translations: translations}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	// Root-signed leaf (created before the intermediate).
+	if err := a.CreateServerCert("root-signed.local", []string{"root-signed.local"}, 1, "", "", false, "server"); err != nil {
+		t.Fatalf("CreateServerCert(root-signed) error = %v", err)
+	}
+	if err := a.CreateIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
+		t.Fatalf("CreateIntermediateCA() error = %v", err)
+	}
+	// Intermediate-signed leaf.
+	if err := a.CreateServerCert("int-signed.local", []string{"int-signed.local"}, 1, "", "", true, "server"); err != nil {
+		t.Fatalf("CreateServerCert(int-signed) error = %v", err)
+	}
+
+	allCerts, err := a.ListCerts()
+	if err != nil {
+		t.Fatalf("ListCerts() error = %v", err)
+	}
+	if len(allCerts) != 2 {
+		t.Fatalf("ListCerts() len = %d, want 2", len(allCerts))
+	}
+	// Revoke both leaves.
+	revoke := map[string]bool{}
+	for _, c := range allCerts {
+		certDir := filepath.Join(a.DataDir, "certs", c.ID)
+		m, err := a.LoadCertMetadata(certDir)
+		if err != nil {
+			t.Fatalf("LoadCertMetadata(%s) error = %v", c.ID, err)
+		}
+		now := time.Now()
+		m.RevokedAt = &now
+		if err := a.SaveCertMetadata(certDir, m); err != nil {
+			t.Fatalf("SaveCertMetadata(%s) error = %v", c.ID, err)
+		}
+		revoke[c.ID] = true
+	}
+
+	// CRL is signed by the default signer: the intermediate, since it exists.
+	if err := a.GenerateCRL("en", ""); err != nil {
+		t.Fatalf("GenerateCRL() error = %v", err)
+	}
+	crlPEM, err := os.ReadFile(filepath.Join(a.DataDir, "crl.pem"))
+	if err != nil {
+		t.Fatalf("read crl.pem error = %v", err)
+	}
+	block, _ := pem.Decode(crlPEM)
+	if block == nil {
+		t.Fatal("crl.pem has no PEM block")
+	}
+	crl, err := x509.ParseRevocationList(block.Bytes)
+	if err != nil {
+		t.Fatalf("ParseRevocationList() error = %v", err)
+	}
+
+	want := 1 // only the intermediate-signed leaf belongs to the intermediate CRL
+	if got := len(crl.RevokedCertificateEntries); got != want {
+		t.Fatalf("CRL serials = %d, want %d (the root-signed leaf must not be in the intermediate-signed CRL)", got, want)
+	}
+	for _, c := range allCerts {
+		certDir := filepath.Join(a.DataDir, "certs", c.ID)
+		cert := parseCertificatePEM(t, filepath.Join(certDir, "cert.pem"))
+		found := false
+		for _, entry := range crl.RevokedCertificateEntries {
+			if entry.SerialNumber.Cmp(cert.SerialNumber) == 0 {
+				found = true
+				break
+			}
+		}
+		if c.Signer == "intermediate" && !found {
+			t.Fatalf("intermediate-signed cert serial missing from its CRL")
+		}
+		if c.Signer == "ca" && found {
+			t.Fatalf("root-signed cert serial must not appear in the intermediate-signed CRL")
+		}
+	}
+}
+
 func createTestCertificate(t *testing.T) (*App, string) {
 	t.Helper()
 

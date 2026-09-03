@@ -14,11 +14,14 @@ import (
 func (a *App) GenerateCRL(lang, signerPassphrase string) error {
 	signerCertPath := filepath.Join(a.DataDir, "ca-cert.pem")
 	signerKeyPath := filepath.Join(a.DataDir, "ca-key.pem")
+	hasIntermediate := a.HasIntermediate()
+	signerName := "ca"
 	missingErr := a.Translate(lang, "msg.ca_passphrase_required")
 	invalidErr := a.Translate(lang, "msg.ca_passphrase_invalid")
-	if a.HasIntermediate() {
+	if hasIntermediate {
 		signerCertPath = filepath.Join(a.DataDir, "intermediate-cert.pem")
 		signerKeyPath = filepath.Join(a.DataDir, "intermediate-key.pem")
+		signerName = "intermediate"
 		missingErr = a.Translate(lang, "msg.intermediate_passphrase_required")
 		invalidErr = a.Translate(lang, "msg.intermediate_passphrase_invalid")
 	}
@@ -50,6 +53,12 @@ func (a *App) GenerateCRL(lang, signerPassphrase string) error {
 	var revokedCerts []x509.RevocationListEntry
 	for _, meta := range certs {
 		if meta.RevokedAt == nil {
+			continue
+		}
+		// A CRL must only revoke certificates issued by the signer of this
+		// CRL. Include the signer chain's certs (intermediate-signed leaves in
+		// the intermediate CRL, root-signed leaves in the root CRL).
+		if meta.SignerName(hasIntermediate) != signerName {
 			continue
 		}
 		certDir := filepath.Join(a.DataDir, "certs", meta.ID)

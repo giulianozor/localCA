@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"net/http"
@@ -138,6 +139,10 @@ func WriteCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 	if err != nil {
 		return err
 	}
+	var meta CertMetadata
+	if err := json.Unmarshal(metadataJSON, &meta); err != nil {
+		return err
+	}
 	caCertPEM, err := os.ReadFile(filepath.Join(dataDir, "ca-cert.pem"))
 	if err != nil {
 		return err
@@ -172,7 +177,9 @@ func WriteCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 	keyFiles := map[string]struct{}{
 		"key.pem": {},
 	}
-	if hasIntermediate {
+	// Build the issuer chain from the certificate's actual signer. Legacy
+	// metadata (no Signer) keeps the historical default-signer behavior.
+	if hasIntermediate && meta.SignerName(hasIntermediate) == "intermediate" {
 		files["intermediate-cert.pem"] = intermediateCertPEM
 		issuerChain := append([]byte(nil), intermediateCertPEM...)
 		issuerChain = append(issuerChain, caCertPEM...)
