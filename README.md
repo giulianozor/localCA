@@ -23,6 +23,13 @@ The application listens on all network interfaces and exposes the UI at `http://
 
 > ⚠️ **Security**: when bound on all interfaces, the CA management UI is reachable from the network. Use only in trusted networks or restrict access with firewall/network rules.
 
+## Security notes
+
+- **No authentication.** The web UI has no login, session, or access control of any kind. Any client that can reach the server can perform every operation, including creating CAs/certificates and **downloading private keys and passphrase-protected key material**. Do not expose it beyond a trusted network, or put it behind a reverse proxy that adds authentication (HTTP basic auth, SSO, VPN, etc.).
+- **No HTTPS.** The server listens on plain HTTP. If accessed over anything other than `localhost`, credentials/keys exchanged in the UI (including passphrases typed into forms) travel in clear text unless you terminate TLS at a reverse proxy.
+- **Private keys are download-able.** The `/download?kind=ca-key-pem` (and per-certificate) endpoints serve private keys directly. Treat these as highly sensitive.
+- **Key encryption uses the legacy PEM format.** Private keys stored with a passphrase use Go's deprecated `x509.EncryptPEMBlock`/`DecryptPEMBlock` (the "`Proc-Type`/`DEK-Info`" PEM encryption). This format is unauthenticated and recommended against by the Go standard library, but it is still functional and interoperates with OpenSSL. Modern encrypted formats (e.g. PKCS#8 with iterated PBES2) are not currently emitted.
+
 ## Features
 
 - Local CA creation with fixed **100-year** validity (optional private-key passphrase)
