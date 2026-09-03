@@ -535,3 +535,44 @@ button:disabled {
   margin-top: 0;
   flex: 1;
 }
+
+/* --- Tabbed navigation --- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+  padding: 4px;
+  background: var(--card, rgba(255,255,255,0.02));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.tab-btn {
+  flex: 1 1 auto;
+  min-width: 90px;
+  margin: 0;
+  padding: 10px 14px;
+  text-align: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-dim, inherit);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: background .15s ease, color .15s ease;
+}
+
+.tab-btn:hover {
+  background: rgba(127,127,127,.08);
+}
+
+.tab-btn.active {
+  background: var(--accent, rgba(59,130,246,.18));
+  color: var(--text);
+}
+
+.tab-panel[hidden] {
+  display: none;
+}

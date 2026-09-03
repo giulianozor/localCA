@@ -133,6 +133,28 @@ type pageData struct {
 	T                        map[string]string
 }
 
+// certTableCtx carries the data needed to render the certificate table for a
+// single certificate type inside the tabbed index page.
+type certTableCtx struct {
+	T            map[string]string
+	CertType     string
+	Title        string
+	CertFilter   string
+	Certificates []certMetadata
+}
+
+// certTableArgs returns the rendering context for a certificate type's table,
+// filtering the full certificate list down to the requested type.
+func certTableArgs(root pageData, certType, title string) certTableCtx {
+	return certTableCtx{
+		T:            root.T,
+		CertType:     certType,
+		Title:        title,
+		CertFilter:   root.CertFilter,
+		Certificates: filterCertificatesByType(root.Certificates, certType),
+	}
+}
+
 func main() {
 	dataDir, port, lang, err := parseArgs(os.Args[1:])
 	if err != nil {
@@ -346,6 +368,15 @@ func (a *app) handleCertTable(w http.ResponseWriter, r *http.Request) {
 		return certs[i].CreatedAt.After(certs[j].CreatedAt)
 	})
 	certs = filterCertificates(certs, r.URL.Query().Get("q"))
+	if certType := r.URL.Query().Get("type"); certType != "" {
+		switch certType {
+		case "server", "client", "dot1x", "codeSigning":
+			certs = filterCertificatesByType(certs, certType)
+		default:
+			http.Error(w, "unknown certificate type", http.StatusBadRequest)
+			return
+		}
+	}
 	data := pageData{
 		Certificates:             certs,
 		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(a.hasIntermediate()),
@@ -1136,6 +1167,18 @@ func filterCertificates(certs []certMetadata, query string) []certMetadata {
 		if strings.Contains(strings.ToLower(cert.ID), query) ||
 			strings.Contains(strings.ToLower(cert.CommonName), query) ||
 			strings.Contains(strings.ToLower(strings.Join(cert.SANs, ",")), query) {
+			filtered = append(filtered, cert)
+		}
+	}
+	return filtered
+}
+
+// filterCertificatesByType keeps only certificates of the given type
+// (server, client, dot1x or codeSigning).
+func filterCertificatesByType(certs []certMetadata, certType string) []certMetadata {
+	filtered := make([]certMetadata, 0, len(certs))
+	for _, cert := range certs {
+		if cert.CertType() == certType {
 			filtered = append(filtered, cert)
 		}
 	}
@@ -2279,4 +2322,6 @@ var certTableRowsHTML string
 var embeddedI18n embed.FS
 
 var certTableRowsTemplate = template.Must(template.New("cert-table-rows").Parse(certTableRowsHTML))
-var indexTemplate = template.Must(template.New("index").Parse(indexHTML))
+var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
+	"certTableArgs": certTableArgs,
+}).Parse(indexHTML))

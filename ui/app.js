@@ -1,65 +1,122 @@
 (() => {
-  // --- Certificate table filter ---
-  const certFilterForm = document.querySelector(".js-cert-filter-form");
-  const certFilterInput = document.querySelector(".js-cert-filter-input");
-  const certTableBody = document.querySelector(".js-cert-table-body");
-  const certTableWrap = document.querySelector(".js-cert-table-wrap");
+  // --- Certificate table filter (one per certificate-type tab) ---
+  const setupCertFilter = (form) => {
+    const input = form.querySelector(".js-cert-filter-input");
+    const clearBtn = form.querySelector(".js-filter-clear");
+    const card = form.closest(".card");
+    const tableBody = card ? card.querySelector(".js-cert-table-body") : null;
+    const certType = form.getAttribute("data-type") || "";
+    if (!input || !tableBody) return;
 
-  if (certFilterForm && certFilterInput && certTableBody) {
     let filterTimeout = null;
 
     const refreshTable = async () => {
       try {
-        const query = window.encodeURIComponent(certFilterInput.value);
-        const response = await window.fetch(`/certs/table?q=${query}`);
+        const params = new URLSearchParams();
+        const q = input.value.trim();
+        if (q) params.set("q", q);
+        if (certType) params.set("type", certType);
+        const response = await window.fetch(`/certs/table?${params.toString()}`);
         if (!response.ok) {
           window.console.error(`Unable to refresh certificates table: HTTP ${response.status}`);
           return;
         }
-        certTableBody.innerHTML = await response.text();
+        tableBody.innerHTML = await response.text();
       } catch (error) {
         window.console.error("Unable to refresh certificates table", error);
       }
     };
 
-    certFilterForm.addEventListener("submit", (event) => {
+    form.addEventListener("submit", (event) => {
       event.preventDefault();
       window.clearTimeout(filterTimeout);
       void refreshTable();
     });
 
-    certFilterInput.addEventListener("input", () => {
+    input.addEventListener("input", () => {
       window.clearTimeout(filterTimeout);
       filterTimeout = window.setTimeout(() => {
         void refreshTable();
       }, 300);
     });
 
-    // Add clear button behavior
-    const clearBtn = document.querySelector(".js-filter-clear");
     if (clearBtn) {
       const updateClearBtn = () => {
-        clearBtn.classList.toggle("visible", certFilterInput.value.length > 0);
+        clearBtn.classList.toggle("visible", input.value.length > 0);
       };
-      certFilterInput.addEventListener("input", updateClearBtn);
+      input.addEventListener("input", updateClearBtn);
       clearBtn.addEventListener("click", () => {
-        certFilterInput.value = "";
+        input.value = "";
         clearBtn.classList.remove("visible");
         window.clearTimeout(filterTimeout);
         void refreshTable();
-        certFilterInput.focus();
+        input.focus();
       });
       updateClearBtn();
     }
 
-    // Escape key clears filter
-    certFilterInput.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && certFilterInput.value) {
-        certFilterInput.value = "";
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && input.value) {
+        input.value = "";
         window.clearTimeout(filterTimeout);
         void refreshTable();
         e.preventDefault();
       }
+    });
+  };
+
+  document.querySelectorAll(".js-cert-filter-form").forEach(setupCertFilter);
+
+  // --- Tabbed navigation ---
+  const tabButtons = document.querySelectorAll(".js-tab-btn");
+  const tabPanels = document.querySelectorAll(".js-tab-panel");
+  const VALID_TABS = ["ca", "server", "client", "dot1x", "code"];
+
+  const selectTab = (name) => {
+    if (!VALID_TABS.includes(name)) name = "ca";
+    tabButtons.forEach((btn) => {
+      const active = btn.getAttribute("data-tab") === name;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    tabPanels.forEach((panel) => {
+      panel.hidden = panel.id !== "tab-" + name;
+    });
+    try {
+      window.localStorage.setItem("localca-active-tab", name);
+    } catch (_) { /* ignore */ }
+    if (window.location.hash !== "#" + name) {
+      window.history.replaceState(null, "", "#" + name);
+    }
+    const activeTabBtn = document.querySelector(`.js-tab-btn[data-tab="${name}"]`);
+    if (activeTabBtn) activeTabBtn.focus();
+  };
+
+  if (tabButtons.length > 0) {
+    tabButtons.forEach((btn) => {
+      btn.addEventListener("click", () => selectTab(btn.getAttribute("data-tab")));
+    });
+    const initial = (window.location.hash || "").replace("#", "");
+    const saved = (() => { try { return window.localStorage.getItem("localca-active-tab"); } catch (_) { return null; } })();
+    const start = initial || saved || "ca";
+    if (VALID_TABS.includes(start)) {
+      selectTab(start);
+    } else {
+      selectTab("ca");
+    }
+  }
+
+  // Keyboard arrow navigation across the tab bar
+  const tabBar = document.querySelector(".js-tabs");
+  if (tabBar) {
+    tabBar.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const btns = Array.from(tabBar.querySelectorAll(".js-tab-btn"));
+      const idx = btns.indexOf(document.activeElement);
+      if (idx === -1) return;
+      const next = e.key === "ArrowRight" ? (idx + 1) % btns.length : (idx - 1 + btns.length) % btns.length;
+      btns[next].focus();
+      e.preventDefault();
     });
   }
 
@@ -120,20 +177,6 @@
 
     signerRadios.forEach((r) => r.addEventListener("change", updatePassphraseField));
     updatePassphraseField();
-  }
-
-  // --- Certificate type toggle (server vs identity/signing) ---
-  const certTypeRadios = document.querySelectorAll(".js-cert-type-radio");
-  const certSansInput = document.querySelector('form[action="/certs/create"] input[name="sans"]');
-  if (certTypeRadios.length > 0 && certSansInput) {
-    const serverLabel = certSansInput.getAttribute("placeholder");
-    const updateType = () => {
-      const selected = document.querySelector(".js-cert-type-radio:checked");
-      const isServer = !selected || selected.value === "server";
-      certSansInput.setAttribute("placeholder", isServer ? serverLabel : "email@example.com, name (optional)");
-    };
-    certTypeRadios.forEach((r) => r.addEventListener("change", updateType));
-    updateType();
   }
 
   // --- Reusable modal setup helper with focus management ---

@@ -48,194 +48,273 @@
         </div>
       </div>
     {{else}}
-      {{if .HasIntermediate}}<div class="card-row">{{end}}
-      <!-- CA Details -->
-      <div class="card">
-        <div class="card-header">
-          <h2>{{index .T "ca.active.title"}}</h2>
-        </div>
-        <div class="ca-details">
-          <strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.CACommonName}}<br>
-          <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.Organization}}<br>
-          <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.Country}}<br>
-          <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.CAValidityYears}}
-        </div>
+      <!-- Tab bar -->
+      <nav class="tabs js-tabs" role="tablist" aria-label="{{index .T "tab.label"}}">
+        <button type="button" class="tab-btn js-tab-btn" role="tab" data-tab="ca" aria-controls="tab-ca">{{index .T "tab.ca"}}</button>
+        <button type="button" class="tab-btn js-tab-btn" role="tab" data-tab="server" aria-controls="tab-server">{{index .T "tab.server"}}</button>
+        <button type="button" class="tab-btn js-tab-btn" role="tab" data-tab="client" aria-controls="tab-client">{{index .T "tab.client"}}</button>
+        <button type="button" class="tab-btn js-tab-btn" role="tab" data-tab="dot1x" aria-controls="tab-dot1x">{{index .T "tab.dot1x"}}</button>
+        <button type="button" class="tab-btn js-tab-btn" role="tab" data-tab="code" aria-controls="tab-code">{{index .T "tab.code"}}</button>
+      </nav>
 
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" class="js-ca-passphrase-btn" style="margin-top:0;">🔑 {{index .T "passphrase.change"}}</button>
-          <button type="button" class="js-ca-renew-btn" style="margin-top:0;">↻ {{index .T "ca.renew.button"}}</button>
-          <button type="button" class="js-crl-btn" style="margin-top:0;">↓ {{index .T "crl.generate.button"}}</button>
-          <button type="button" class="js-ca-export-btn" style="margin-top:0;">⬇ {{index .T "ca.backup.export"}}</button>
-          <button type="button" class="js-ca-import-btn" style="margin-top:0;">⬆ {{index .T "ca.backup.import"}}</button>
-        </div>
-
-        <div class="export-links">
-          <span class="dim">{{index .T "export.label"}}:</span>
-          <a href="/download?kind=ca-cert-pem">CA cert PEM</a>
-          <a href="/download?kind=ca-cert-der">CA cert DER</a>
-          <a href="/download?kind=ca-key-pem">CA key PEM</a>
-        </div>
-
-        {{if .HasCRL}}
-          <div class="export-links" style="margin-top:8px;">
-            <span class="dim">{{index .T "crl.download.label"}}:</span>
-            <a href="/download?kind=crl-pem">CRL PEM</a>
-            <a href="/download?kind=crl-der">CRL DER</a>
-          </div>
-        {{end}}
-      </div>
-
-      {{if .HasIntermediate}}
-        <!-- Intermediate CA active -->
+      <!-- CA tab -->
+      <section class="tab-panel js-tab-panel" id="tab-ca" role="tabpanel" aria-labelledby="tab-ca">
+        {{if .HasIntermediate}}<div class="card-row">{{end}}
+        <!-- CA Details -->
         <div class="card">
           <div class="card-header">
-            <h2>{{index .T "intermediate.active.title"}}</h2>
+            <h2>{{index .T "ca.active.title"}}</h2>
           </div>
           <div class="ca-details">
-            <strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.IntermediateCommonName}}<br>
-            <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.IntermediateOrganization}}<br>
-            <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.IntermediateCountry}}<br>
-            <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.IntermediateValidityYears}}
+            <strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.CACommonName}}<br>
+            <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.Organization}}<br>
+            <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.Country}}<br>
+            <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.CAValidityYears}}
           </div>
 
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-            <button type="button" class="js-intermediate-passphrase-btn" style="margin-top:0;">🔑 {{index .T "passphrase.change"}}</button>
-            <button type="button" class="js-intermediate-renew-btn" style="margin-top:0;">↻ {{index .T "intermediate.renew.button"}}</button>
+            <button type="button" class="js-ca-passphrase-btn" style="margin-top:0;">🔑 {{index .T "passphrase.change"}}</button>
+            <button type="button" class="js-ca-renew-btn" style="margin-top:0;">↻ {{index .T "ca.renew.button"}}</button>
+            <button type="button" class="js-crl-btn" style="margin-top:0;">↓ {{index .T "crl.generate.button"}}</button>
+            <button type="button" class="js-ca-export-btn" style="margin-top:0;">⬇ {{index .T "ca.backup.export"}}</button>
+            <button type="button" class="js-ca-import-btn" style="margin-top:0;">⬆ {{index .T "ca.backup.import"}}</button>
           </div>
 
           <div class="export-links">
             <span class="dim">{{index .T "export.label"}}:</span>
-            <a href="/download?kind=intermediate-cert-pem">Intermediate cert PEM</a>
-            <a href="/download?kind=intermediate-chain-pem">Intermediate chain PEM</a>
+            <a href="/download?kind=ca-cert-pem">CA cert PEM</a>
+            <a href="/download?kind=ca-cert-der">CA cert DER</a>
+            <a href="/download?kind=ca-key-pem">CA key PEM</a>
           </div>
-        </div>
-      </div>{{/* closes card-row */}}
-      {{else}}
-        <!-- Intermediate CA create -->
-        <div class="card">
-          <h2>{{index .T "intermediate.create.title"}}</h2>
-          <p class="muted">{{printf (index .T "intermediate.create.validity") .IntermediateYears}}</p>
-          <form method="post" action="/intermediate/create">
-            <div class="form-row">
-              <label>{{index .T "intermediate.create.cn_label"}}<input name="intermediate_common_name" placeholder="{{index .T "intermediate.create.cn_placeholder"}}"></label>
-              <label>{{index .T "intermediate.create.org_label"}}<input name="intermediate_organization" placeholder="{{.Config.Organization}}"></label>
-            </div>
-            <div class="form-row">
-              <label>{{index .T "intermediate.create.country_label"}}<input name="intermediate_country" placeholder="{{.Config.Country}}" maxlength="2"></label>
-              {{if .Config.CAPassphraseSet}}
-                <label>{{index .T "intermediate.create.ca_passphrase_label"}}<input name="ca_passphrase" type="password"></label>
-              {{end}}
-            </div>
-            <label>{{index .T "intermediate.create.passphrase_label"}}<input name="intermediate_passphrase" type="password" placeholder="{{index .T "intermediate.create.passphrase_placeholder"}}"></label>
-            <button type="submit">⊕ {{index .T "intermediate.create.button"}}</button>
-          </form>
-        </div>
-      {{end}}
 
-      <!-- Create Certificate -->
-      <div class="card">
-        <h2>{{index .T "cert.create.title"}}</h2>
-        <form method="post" action="/certs/create">
-          <div class="radio-group" role="radiogroup" aria-label="{{index .T "cert.create.type_label"}}">
-            <label>
-              <input type="radio" name="cert_type" value="server" class="js-cert-type-radio" checked>
-              {{index .T "cert.create.type_server"}}
-            </label>
-            <label>
-              <input type="radio" name="cert_type" value="client" class="js-cert-type-radio">
-              {{index .T "cert.create.type_client"}}
-            </label>
-            <label>
-              <input type="radio" name="cert_type" value="dot1x" class="js-cert-type-radio">
-              {{index .T "cert.create.type_dot1x"}}
-            </label>
-            <label>
-              <input type="radio" name="cert_type" value="codeSigning" class="js-cert-type-radio">
-              {{index .T "cert.create.type_code_signing"}}
-            </label>
-          </div>
-          <div class="form-row">
-            <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="dev.local"></label>
-            <label>{{index .T "cert.create.sans_label"}}
-              <input name="sans" placeholder="dev.local, api.local, 127.0.0.1">
-            </label>
-          </div>
-          <div class="form-row">
-            <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
-              <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
-            </label>
-            <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
-          </div>
-          {{if .HasIntermediate}}
-            <div class="radio-group" role="radiogroup" aria-label="{{index .T "cert.create.signer_selection"}}">
-              <label>
-                <input type="radio" name="signer" value="ca" class="js-signer-radio" data-passphrase="{{.Config.CAPassphraseSet}}" checked>
-                {{index .T "cert.create.signer_ca"}} ({{.Config.CACommonName}})
-              </label>
-              <label>
-                <input type="radio" name="signer" value="intermediate" class="js-signer-radio" data-passphrase="{{.Config.IntermediatePassphraseSet}}">
-                {{index .T "cert.create.signer_intermediate"}} ({{.Config.IntermediateCommonName}})
-              </label>
+          {{if .HasCRL}}
+            <div class="export-links" style="margin-top:8px;">
+              <span class="dim">{{index .T "crl.download.label"}}:</span>
+              <a href="/download?kind=crl-pem">CRL PEM</a>
+              <a href="/download?kind=crl-der">CRL DER</a>
             </div>
           {{end}}
-          <div class="js-signer-passphrase-wrap" {{if not (or .Config.CAPassphraseSet .Config.IntermediatePassphraseSet)}}style="display:none"{{end}}>
-            <label>
-              <span class="js-signer-passphrase-label">{{index .T "cert.create.signer_passphrase_label"}}</span>
-              <input name="signer_passphrase" type="password">
-            </label>
-          </div>
-          <button type="submit">⊕ {{index .T "cert.create.button"}}</button>
-        </form>
-      </div>
+        </div>
 
-      <!-- Certificates Table -->
-      <div class="card">
-        <div class="card-header" style="margin-bottom:12px;">
-          <h2 style="margin:0;">{{index .T "cert.list.title"}}</h2>
-        </div>
-        <form class="js-cert-filter-form" method="get" action="/" role="search" aria-label="{{index .T "cert.list.filter_placeholder"}}">
-          <div class="filter-wrap">
-            <input class="js-cert-filter-input" name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}" aria-label="{{index .T "cert.list.filter_placeholder"}}">
-            <button type="button" class="js-filter-clear filter-clear" aria-label="Clear filter">&times;</button>
+        {{if .HasIntermediate}}
+          <!-- Intermediate CA active -->
+          <div class="card">
+            <div class="card-header">
+              <h2>{{index .T "intermediate.active.title"}}</h2>
+            </div>
+            <div class="ca-details">
+              <strong>{{index .T "ca.active.cn"}}:</strong> {{.Config.IntermediateCommonName}}<br>
+              <strong>{{index .T "ca.active.org"}}:</strong> {{.Config.IntermediateOrganization}}<br>
+              <strong>{{index .T "ca.active.country"}}:</strong> {{.Config.IntermediateCountry}}<br>
+              <strong>{{index .T "ca.active.validity"}}:</strong> {{printf (index .T "years.value") .Config.IntermediateValidityYears}}
+            </div>
+
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+              <button type="button" class="js-intermediate-passphrase-btn" style="margin-top:0;">🔑 {{index .T "passphrase.change"}}</button>
+              <button type="button" class="js-intermediate-renew-btn" style="margin-top:0;">↻ {{index .T "intermediate.renew.button"}}</button>
+            </div>
+
+            <div class="export-links">
+              <span class="dim">{{index .T "export.label"}}:</span>
+              <a href="/download?kind=intermediate-cert-pem">Intermediate cert PEM</a>
+              <a href="/download?kind=intermediate-chain-pem">Intermediate chain PEM</a>
+            </div>
           </div>
-        </form>
-        <div class="table-wrap js-cert-table-wrap">
-          <table aria-label="{{index .T "cert.list.title"}}">
-            <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.status"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
-            <tbody class="js-cert-table-body">
-              {{range .Certificates}}
-                <tr>
-                  <td class="dim" style="font-size:0.8rem;">{{.ID}}</td>
-                  <td><strong>{{.CommonName}}</strong>{{if eq .Type "client"}} <span class="badge badge-client">{{index $.T "cert.type.badge_client"}}</span>{{else if eq .Type "dot1x"}} <span class="badge badge-dot1x">{{index $.T "cert.type.badge_dot1x"}}</span>{{else if eq .Type "codeSigning"}} <span class="badge badge-code">{{index $.T "cert.type.badge_code"}}</span>{{end}}</td>
-                  <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
-                  <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
-                  <td>{{if .RevokedAt}}<span class="badge badge-revoked">{{index $.T "cert.status.revoked"}}</span>{{else}}<span class="badge badge-active">{{index $.T "cert.status.active"}}</span>{{end}}</td>
-                  <td class="cert-actions">
-                    <button type="button" class="js-export-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">⬇ tar.gz</button>
-                    {{if or (eq .Type "client") (eq .Type "dot1x")}}
-                      <button type="button" class="js-p12-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔐 p12</button>
-                    {{end}}
-                    <button type="button" class="js-passphrase-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔑 {{index $.T "cert.list.passphrase"}}</button>
-                    <button type="button" class="js-renew-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">↻ {{index $.T "cert.list.renew"}}</button>
-                    {{if not .RevokedAt}}
-                      <form class="inline-form js-delete-cert-form" method="post" action="/certs/revoke" data-confirm-text="{{index $.T "cert.revoke.confirm"}}">
-                        <input type="hidden" name="id" value="{{.ID}}">
-                        <button type="submit">⛔ {{index $.T "cert.list.revoke"}}</button>
-                      </form>
-                    {{end}}
-                    <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
-                      <input type="hidden" name="id" value="{{.ID}}">
-                      <button class="danger" type="submit" aria-label="{{index $.T "cert.list.delete"}} {{.ID}}">✕ {{index $.T "cert.list.delete"}}</button>
-                    </form>
-                  </td>
-                </tr>
-              {{else}}
-                <tr><td colspan="6" class="muted" style="text-align:center;padding:24px;">{{index .T "cert.list.none"}}</td></tr>
-              {{end}}
-            </tbody>
-          </table>
+        </div>{{/* closes card-row */}}
+        {{else}}
+          <!-- Intermediate CA create -->
+          <div class="card">
+            <h2>{{index .T "intermediate.create.title"}}</h2>
+            <p class="muted">{{printf (index .T "intermediate.create.validity") .IntermediateYears}}</p>
+            <form method="post" action="/intermediate/create">
+              <div class="form-row">
+                <label>{{index .T "intermediate.create.cn_label"}}<input name="intermediate_common_name" placeholder="{{index .T "intermediate.create.cn_placeholder"}}"></label>
+                <label>{{index .T "intermediate.create.org_label"}}<input name="intermediate_organization" placeholder="{{.Config.Organization}}"></label>
+              </div>
+              <div class="form-row">
+                <label>{{index .T "intermediate.create.country_label"}}<input name="intermediate_country" placeholder="{{.Config.Country}}" maxlength="2"></label>
+                {{if .Config.CAPassphraseSet}}
+                  <label>{{index .T "intermediate.create.ca_passphrase_label"}}<input name="ca_passphrase" type="password"></label>
+                {{end}}
+              </div>
+              <label>{{index .T "intermediate.create.passphrase_label"}}<input name="intermediate_passphrase" type="password" placeholder="{{index .T "intermediate.create.passphrase_placeholder"}}"></label>
+              <button type="submit">⊕ {{index .T "intermediate.create.button"}}</button>
+            </form>
+          </div>
+        {{end}}
+      </section>
+
+      <!-- Server tab -->
+      <section class="tab-panel js-tab-panel" id="tab-server" role="tabpanel" hidden>
+        <div class="card">
+          <h2>{{index .T "cert.create.title_server"}}</h2>
+          <form method="post" action="/certs/create">
+            <input type="hidden" name="cert_type" value="server">
+            <div class="form-row">
+              <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="dev.local"></label>
+              <label>{{index .T "cert.create.sans_label"}}
+                <input name="sans" placeholder="dev.local, api.local, 127.0.0.1">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
+                <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
+              </label>
+              <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
+            </div>
+            {{if .HasIntermediate}}
+              <div class="radio-group" role="radiogroup" aria-label="{{index .T "cert.create.signer_selection"}}">
+                <label>
+                  <input type="radio" name="signer" value="ca" class="js-signer-radio" data-passphrase="{{.Config.CAPassphraseSet}}" checked>
+                  {{index .T "cert.create.signer_ca"}} ({{.Config.CACommonName}})
+                </label>
+                <label>
+                  <input type="radio" name="signer" value="intermediate" class="js-signer-radio" data-passphrase="{{.Config.IntermediatePassphraseSet}}">
+                  {{index .T "cert.create.signer_intermediate"}} ({{.Config.IntermediateCommonName}})
+                </label>
+              </div>
+            {{end}}
+            <div class="js-signer-passphrase-wrap" {{if not (or .Config.CAPassphraseSet .Config.IntermediatePassphraseSet)}}style="display:none"{{end}}>
+              <label>
+                <span class="js-signer-passphrase-label">{{index .T "cert.create.signer_passphrase_label"}}</span>
+                <input name="signer_passphrase" type="password">
+              </label>
+            </div>
+            <button type="submit">⊕ {{index .T "cert.create.button"}}</button>
+          </form>
         </div>
-      </div>
+
+        {{template "certTable" (certTableArgs . "server" (index .T "cert.list.title_server"))}}
+      </section>
+
+      <!-- Client tab -->
+      <section class="tab-panel js-tab-panel" id="tab-client" role="tabpanel" hidden>
+        <div class="card">
+          <h2>{{index .T "cert.create.title_client"}}</h2>
+          <form method="post" action="/certs/create">
+            <input type="hidden" name="cert_type" value="client">
+            <div class="form-row">
+              <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="alice@example.com"></label>
+              <label>{{index .T "cert.create.sans_label"}}
+                <input name="sans" placeholder="alice@example.com, username">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
+                <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
+              </label>
+              <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
+            </div>
+            {{if .HasIntermediate}}
+              <div class="radio-group" role="radiogroup" aria-label="{{index .T "cert.create.signer_selection"}}">
+                <label>
+                  <input type="radio" name="signer" value="ca" class="js-signer-radio" data-passphrase="{{.Config.CAPassphraseSet}}" checked>
+                  {{index .T "cert.create.signer_ca"}} ({{.Config.CACommonName}})
+                </label>
+                <label>
+                  <input type="radio" name="signer" value="intermediate" class="js-signer-radio" data-passphrase="{{.Config.IntermediatePassphraseSet}}">
+                  {{index .T "cert.create.signer_intermediate"}} ({{.Config.IntermediateCommonName}})
+                </label>
+              </div>
+            {{end}}
+            <div class="js-signer-passphrase-wrap" {{if not (or .Config.CAPassphraseSet .Config.IntermediatePassphraseSet)}}style="display:none"{{end}}>
+              <label>
+                <span class="js-signer-passphrase-label">{{index .T "cert.create.signer_passphrase_label"}}</span>
+                <input name="signer_passphrase" type="password">
+              </label>
+            </div>
+            <button type="submit">⊕ {{index .T "cert.create.button"}}</button>
+          </form>
+        </div>
+
+        {{template "certTable" (certTableArgs . "client" (index .T "cert.list.title_client"))}}
+      </section>
+
+      <!-- 802.1X tab -->
+      <section class="tab-panel js-tab-panel" id="tab-dot1x" role="tabpanel" hidden>
+        <div class="card">
+          <h2>{{index .T "cert.create.title_dot1x"}}</h2>
+          <form method="post" action="/certs/create">
+            <input type="hidden" name="cert_type" value="dot1x">
+            <div class="form-row">
+              <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="device-07ab"></label>
+              <label>{{index .T "cert.create.sans_label"}}
+                <input name="sans" placeholder="device@example.com, machine-XYZ">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
+                <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
+              </label>
+              <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
+            </div>
+            {{if .HasIntermediate}}
+              <div class="radio-group" role="radiogroup" aria-label="{{index .T "cert.create.signer_selection"}}">
+                <label>
+                  <input type="radio" name="signer" value="ca" class="js-signer-radio" data-passphrase="{{.Config.CAPassphraseSet}}" checked>
+                  {{index .T "cert.create.signer_ca"}} ({{.Config.CACommonName}})
+                </label>
+                <label>
+                  <input type="radio" name="signer" value="intermediate" class="js-signer-radio" data-passphrase="{{.Config.IntermediatePassphraseSet}}">
+                  {{index .T "cert.create.signer_intermediate"}} ({{.Config.IntermediateCommonName}})
+                </label>
+              </div>
+            {{end}}
+            <div class="js-signer-passphrase-wrap" {{if not (or .Config.CAPassphraseSet .Config.IntermediatePassphraseSet)}}style="display:none"{{end}}>
+              <label>
+                <span class="js-signer-passphrase-label">{{index .T "cert.create.signer_passphrase_label"}}</span>
+                <input name="signer_passphrase" type="password">
+              </label>
+            </div>
+            <button type="submit">⊕ {{index .T "cert.create.button"}}</button>
+          </form>
+        </div>
+
+        {{template "certTable" (certTableArgs . "dot1x" (index .T "cert.list.title_dot1x"))}}
+      </section>
+
+      <!-- Code signing tab -->
+      <section class="tab-panel js-tab-panel" id="tab-code" role="tabpanel" hidden>
+        <div class="card">
+          <h2>{{index .T "cert.create.title_code"}}</h2>
+          <form method="post" action="/certs/create">
+            <input type="hidden" name="cert_type" value="codeSigning">
+            <div class="form-row">
+              <label>{{index .T "cert.create.cn_label"}}<input name="common_name" placeholder="CI Signing Key"></label>
+              <label>{{index .T "cert.create.sans_label"}}
+                <input name="sans" placeholder="builder@example.com, release-signer">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>{{printf (index .T "cert.create.validity_label") .MaxCertYears .DefaultCertYears}}
+                <input name="validity_years" type="number" min="1" max="{{.MaxCertYears}}" value="{{.DefaultCertYears}}">
+              </label>
+              <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
+            </div>
+            {{if .HasIntermediate}}
+              <div class="radio-group" role="radiogroup" aria-label="{{index .T "cert.create.signer_selection"}}">
+                <label>
+                  <input type="radio" name="signer" value="ca" class="js-signer-radio" data-passphrase="{{.Config.CAPassphraseSet}}" checked>
+                  {{index .T "cert.create.signer_ca"}} ({{.Config.CACommonName}})
+                </label>
+                <label>
+                  <input type="radio" name="signer" value="intermediate" class="js-signer-radio" data-passphrase="{{.Config.IntermediatePassphraseSet}}">
+                  {{index .T "cert.create.signer_intermediate"}} ({{.Config.IntermediateCommonName}})
+                </label>
+              </div>
+            {{end}}
+            <div class="js-signer-passphrase-wrap" {{if not (or .Config.CAPassphraseSet .Config.IntermediatePassphraseSet)}}style="display:none"{{end}}>
+              <label>
+                <span class="js-signer-passphrase-label">{{index .T "cert.create.signer_passphrase_label"}}</span>
+                <input name="signer_passphrase" type="password">
+              </label>
+            </div>
+            <button type="submit">⊕ {{index .T "cert.create.button"}}</button>
+          </form>
+        </div>
+
+        {{template "certTable" (certTableArgs . "codeSigning" (index .T "cert.list.title_code"))}}
+      </section>
     {{end}}
   </div>
 
@@ -422,3 +501,52 @@
   </div>
 </body>
 </html>
+{{define "certTable"}}
+  <div class="card">
+    <div class="card-header" style="margin-bottom:12px;">
+      <h2 style="margin:0;">{{.Title}}</h2>
+    </div>
+    <form class="js-cert-filter-form" method="get" action="/" data-type="{{.CertType}}" role="search" aria-label="{{index .T "cert.list.filter_placeholder"}}">
+      <div class="filter-wrap">
+        <input class="js-cert-filter-input" name="q" value="{{.CertFilter}}" placeholder="{{index .T "cert.list.filter_placeholder"}}" aria-label="{{index .T "cert.list.filter_placeholder"}}">
+        <button type="button" class="js-filter-clear filter-clear" aria-label="Clear filter">&times;</button>
+      </div>
+    </form>
+    <div class="table-wrap js-cert-table-wrap">
+      <table aria-label="{{.Title}}">
+        <thead><tr><th>ID</th><th>CN</th><th>SAN</th><th>{{index .T "cert.list.validity"}}</th><th>{{index .T "cert.list.status"}}</th><th>{{index .T "cert.list.export"}}</th></tr></thead>
+        <tbody class="js-cert-table-body" data-type="{{.CertType}}">
+          {{range .Certificates}}
+            <tr>
+              <td class="dim" style="font-size:0.8rem;">{{.ID}}</td>
+              <td><strong>{{.CommonName}}</strong>{{if eq .Type "client"}} <span class="badge badge-client">{{index $.T "cert.type.badge_client"}}</span>{{else if eq .Type "dot1x"}} <span class="badge badge-dot1x">{{index $.T "cert.type.badge_dot1x"}}</span>{{else if eq .Type "codeSigning"}} <span class="badge badge-code">{{index $.T "cert.type.badge_code"}}</span>{{end}}</td>
+              <td>{{range $i, $v := .SANs}}{{if $i}}, {{end}}{{$v}}{{end}}</td>
+              <td>{{printf (index $.T "years.value") .ValidityYears}}</td>
+              <td>{{if .RevokedAt}}<span class="badge badge-revoked">{{index $.T "cert.status.revoked"}}</span>{{else}}<span class="badge badge-active">{{index $.T "cert.status.active"}}</span>{{end}}</td>
+              <td class="cert-actions">
+                <button type="button" class="js-export-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">⬇ tar.gz</button>
+                {{if or (eq .Type "client") (eq .Type "dot1x")}}
+                  <button type="button" class="js-p12-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔐 p12</button>
+                {{end}}
+                <button type="button" class="js-passphrase-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">🔑 {{index $.T "cert.list.passphrase"}}</button>
+                <button type="button" class="js-renew-btn" data-cert-id="{{.ID}}" style="font-size:0.8rem;padding:5px 10px;margin:0;">↻ {{index $.T "cert.list.renew"}}</button>
+                {{if not .RevokedAt}}
+                  <form class="inline-form js-delete-cert-form" method="post" action="/certs/revoke" data-confirm-text="{{index $.T "cert.revoke.confirm"}}">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <button type="submit">⛔ {{index $.T "cert.list.revoke"}}</button>
+                  </form>
+                {{end}}
+                <form class="inline-form js-delete-cert-form" method="post" action="/certs/delete" data-confirm-text="{{index $.T "cert.delete.confirm"}}">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <button class="danger" type="submit" aria-label="{{index $.T "cert.list.delete"}} {{.ID}}">✕ {{index $.T "cert.list.delete"}}</button>
+                </form>
+              </td>
+            </tr>
+          {{else}}
+            <tr><td colspan="6" class="muted" style="text-align:center;padding:24px;">{{index .T "cert.list.none"}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{{end}}
