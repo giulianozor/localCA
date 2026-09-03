@@ -222,7 +222,7 @@ func handleChangeIntermediatePassphrase(a *ca.App, w http.ResponseWriter, r *htt
 	currentPassphrase := strings.TrimSpace(r.FormValue("current_passphrase"))
 	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
 	if cfg.IntermediatePassphraseSet && currentPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.intermediate_passphrase_required")), http.StatusSeeOther)
 		return
 	}
 	if err := a.ChangeIntermediatePassphrase(currentPassphrase, newPassphrase); err != nil {

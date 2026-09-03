@@ -349,6 +349,44 @@ func TestHandleRenewIntermediateRequiresPassphrase(t *testing.T) {
 	}
 }
 
+func TestHandleChangeIntermediatePassphraseRequiresCurrentPassphrase(t *testing.T) {
+	translations, err := ca.LoadTranslations()
+	if err != nil {
+		t.Fatalf("LoadTranslations() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &ca.App{DataDir: tempDir, DefaultLang: "en", Translations: translations}
+	if err := a.CreateCA("Test Root", "localCA", "IT", "secret"); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	if err := a.CreateIntermediateCA("Test Intermediate", "localCA", "IT", "secret", "intermediate-secret"); err != nil {
+		t.Fatalf("CreateIntermediateCA() error = %v", err)
+	}
+
+	form := url.Values{}
+	req := httptest.NewRequest(http.MethodPost, "/intermediate/passphrase", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	handleChangeIntermediatePassphrase(a, rr, req)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("handleChangeIntermediatePassphrase() status = %d, want %d", rr.Code, http.StatusSeeOther)
+	}
+	loc := rr.Header().Get("Location")
+	if !strings.Contains(loc, "err=") {
+		t.Fatalf("handleChangeIntermediatePassphrase() expected error redirect when current passphrase missing, got %s", loc)
+	}
+	if strings.Contains(loc, url.QueryEscape("Intermediate passphrase required")) {
+		return
+	}
+	if !strings.Contains(loc, url.QueryEscape("Issuer key passphrase required")) {
+		t.Fatalf("handleChangeIntermediatePassphrase() unexpected error message, got %s", loc)
+	}
+	t.Fatalf("handleChangeIntermediatePassphrase() used miscategorized signer_passphrase_required key: %s", loc)
+}
+
 func createTestCertificate(t *testing.T) (*ca.App, string) {
 	t.Helper()
 
