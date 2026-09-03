@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	pkcs12 "software.sslmate.com/src/go-pkcs12"
 
 	"github.com/giulianozor/localCA/internal/ca"
 )
@@ -404,5 +407,285 @@ func assertIPAddresses(t *testing.T, got []net.IP, want []string) {
 		if got[i].String() != expected {
 			t.Fatalf("IPAddresses[%d] = %s, want %s", i, got[i], expected)
 		}
+	}
+}
+
+// buildTestCA creates an app with a CA and one issued certificate so we can
+// exercise whole-CA archive handler round-trips.
+func buildTestCA(t *testing.T) (*ca.App, string) {
+	t.Helper()
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	if err := a.CreateServerCert("myserver.example.com", []string{
+		"myserver.example.com", "127.0.0.1",
+	}, 1, "", "", false, "server"); err != nil {
+		t.Fatalf("CreateServerCert() error = %v", err)
+	}
+	certs, err := a.ListCerts()
+	if err != nil || len(certs) != 1 {
+		t.Fatalf("expected one cert, got %d (err=%v)", len(certs), err)
+	}
+	return a, certs[0].ID
+}
+
+func TestHandleDownloadCAArchive(t *testing.T) {
+	a, _ := buildTestCA(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/download?kind=ca-all-tar-gz&export_passphrase=backup-pass", nil)
+	rr := httptest.NewRecorder()
+	handleDownload(a, rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("handleDownload(ca-all-tar-gz) status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	body := rr.Body.Bytes()
+	if !bytes.HasPrefix(body, []byte(ca.CAArchiveMagic)) {
+		t.Fatal("exported CA archive was not encrypted despite passphrase")
+	}
+
+	// Download without passphrase should produce a plain tar.gz.
+	req2 := httptest.NewRequest(http.MethodGet, "/download?kind=ca-all-tar-gz", nil)
+	rr2 := httptest.NewRecorder()
+	handleDownload(a, rr2, req2)
+	if bytes.HasPrefix(rr2.Body.Bytes(), []byte(ca.CAArchiveMagic)) {
+		t.Fatal("exported CA archive unexpectedly encrypted without passphrase")
+	}
+}
+
+func TestHandleImportCA(t *testing.T) {
+	src, certID := buildTestCA(t)
+	raw, err := src.BuildCAArchive()
+	if err != nil {
+		t.Fatalf("BuildCAArchive() error = %v", err)
+	}
+
+	dst := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, err := mw.CreateFormFile("archive", "backup.tar.gz")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := fw.Write(raw); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+	if err := mw.WriteField("import_passphrase", ""); err != nil {
+		t.Fatalf("WriteField: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("mw.Close: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/ca/import", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rr := httptest.NewRecorder()
+	handleImportCA(dst, rr, req)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("handleImportCA status = %d, want %d", rr.Code, http.StatusSeeOther)
+	}
+	if got := rr.Header().Get("Location"); !strings.Contains(got, "msg=") {
+		t.Fatalf("expected success redirect, got %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(dst.DataDir, "certs", certID, "cert.pem")); err != nil {
+		t.Fatalf("issued cert not restored after import: %v", err)
+	}
+}
+
+func TestExportClientCertP12(t *testing.T) {
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	if err := a.CreateServerCert("alice@example.com", nil, 1, "", "", false, "client"); err != nil {
+		t.Fatalf("CreateServerCert(client) error = %v", err)
+	}
+	certs, _ := a.ListCerts()
+	id := certs[0].ID
+	certDir := filepath.Join(a.DataDir, "certs", id)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/download?kind=client-p12&id="+id+"&export_passphrase=p12pass", nil)
+	handleDownload(a, rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("client-p12 download status = %d, want %d (body=%s)", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if !strings.Contains(rr.Header().Get("Content-Type"), "pkcs12") {
+		t.Fatalf("Content-Type = %q, want pkcs12", rr.Header().Get("Content-Type"))
+	}
+
+	// Decode the produced p12 and confirm it matches the leaf certificate.
+	pfx := rr.Body.Bytes()
+	privKey, leaf, caCerts, err := pkcs12.DecodeChain(pfx, "p12pass")
+	if err != nil {
+		t.Fatalf("pkcs12 decode error = %v", err)
+	}
+	if leaf == nil || privKey == nil {
+		t.Fatal("p12 did not decode a key and certificate")
+	}
+	if len(caCerts) == 0 {
+		t.Fatal("p12 did not include the CA certificate chain")
+	}
+	diskCert := parseCertificatePEM(t, filepath.Join(certDir, "cert.pem"))
+	if leaf.SerialNumber.Cmp(diskCert.SerialNumber) != 0 {
+		t.Fatal("p12 leaf certificate does not match stored certificate")
+	}
+
+	// Wrong password must fail.
+	if _, _, _, err := pkcs12.DecodeChain(pfx, "wrong"); err == nil {
+		t.Fatal("p12 decoded with wrong password, want error")
+	}
+}
+
+func TestExportClientCertP12RequiresUnencryptedKey(t *testing.T) {
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	// Client cert with an encrypted private key.
+	if err := a.CreateServerCert("bob@example.com", nil, 1, "keypass", "", false, "client"); err != nil {
+		t.Fatalf("CreateServerCert(client, keypass) error = %v", err)
+	}
+	certs, _ := a.ListCerts()
+	id := certs[0].ID
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/download?kind=client-p12&id="+id, nil)
+	handleDownload(a, rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for encrypted-key p12 export, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "encrypted") {
+		t.Fatalf("expected error mentioning encrypted key, got %q", rr.Body.String())
+	}
+}
+
+func TestExportDot1xCertP12(t *testing.T) {
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	if err := a.CreateServerCert("device-07ab", nil, 1, "", "", false, "dot1x"); err != nil {
+		t.Fatalf("CreateServerCert(dot1x) error = %v", err)
+	}
+	certs, _ := a.ListCerts()
+	id := certs[0].ID
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/download?kind=client-p12&id="+id+"&export_passphrase=pass", nil)
+	handleDownload(a, rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("dot1x p12 download status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Header().Get("Content-Type"), "pkcs12") {
+		t.Fatalf("Content-Type = %q, want pkcs12", rr.Header().Get("Content-Type"))
+	}
+}
+
+func TestHandleCertTableFiltersByType(t *testing.T) {
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	if err := a.CreateServerCert("srv.local", nil, 1, "", "", false, "server"); err != nil {
+		t.Fatalf("server cert error = %v", err)
+	}
+	if err := a.CreateServerCert("alice", nil, 1, "", "", false, "client"); err != nil {
+		t.Fatalf("client cert error = %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/certs/table?type=client", nil)
+	handleCertTable(a, rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("handleCertTable status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "alice") {
+		t.Fatalf("table body missing client cert: %q", body)
+	}
+	if strings.Contains(body, "srv.local") {
+		t.Fatalf("table body should not contain server cert in client view: %q", body)
+	}
+
+	// Unknown type is rejected.
+	rr2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/certs/table?type=bogus", nil)
+	handleCertTable(a, rr2, req2)
+	if rr2.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unknown type, got %d", rr2.Code)
+	}
+}
+
+func TestIndexRendersTabsAndPerTypeForms(t *testing.T) {
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	tr, err := ca.LoadTranslations()
+	if err != nil {
+		t.Fatalf("LoadTranslations() error = %v", err)
+	}
+	a.Translations = tr
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	if err := a.CreateServerCert("myserver.example.com", []string{"myserver.example.com"}, 1, "", "", false, "server"); err != nil {
+		t.Fatalf("server cert error = %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	handleIndex(a, rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("handleIndex status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+
+	for _, marker := range []string{
+		`class="tabs js-tabs"`,
+		`data-tab="ca"`,
+		`data-tab="server"`,
+		`data-tab="client"`,
+		`data-tab="dot1x"`,
+		`data-tab="code"`,
+		`id="tab-ca"`,
+		`id="tab-server"`,
+		`id="tab-client"`,
+		`id="tab-dot1x"`,
+		`id="tab-code"`,
+		`name="cert_type" value="server"`,
+		`name="cert_type" value="client"`,
+		`name="cert_type" value="dot1x"`,
+		`name="cert_type" value="codeSigning"`,
+		`data-type="server"`,
+		`data-type="client"`,
+		`data-type="dot1x"`,
+		`data-type="codeSigning"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("index page missing marker %q", marker)
+		}
+	}
+}
+
+func TestIndexRendersNoTabsBeforeCA(t *testing.T) {
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	tr, err := ca.LoadTranslations()
+	if err != nil {
+		t.Fatalf("LoadTranslations() error = %v", err)
+	}
+	a.Translations = tr
+	if err := os.MkdirAll(filepath.Join(a.DataDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	handleIndex(a, rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("handleIndex status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), `class="tabs js-tabs"`) {
+		t.Fatal("index should not render tabs before a CA exists")
 	}
 }
