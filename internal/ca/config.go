@@ -125,6 +125,7 @@ func (a *App) ListCerts() ([]CertMetadata, error) {
 			log.Printf("ListCerts: skipping %s: invalid metadata: %v", entry.Name(), err)
 			continue
 		}
+		m.Type = m.CertType()
 		certs = append(certs, m)
 	}
 	return certs, nil
