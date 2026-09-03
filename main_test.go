@@ -727,6 +727,53 @@ func TestExportClientCertP12(t *testing.T) {
 	}
 }
 
+func TestExportClientCertP12ChainMatchesSigner(t *testing.T) {
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	// Root-signed client cert, created before the intermediate exists.
+	if err := a.CreateServerCert("ca-leaf@example.com", nil, 1, "", "", false, "client"); err != nil {
+		t.Fatalf("CreateServerCert(client, root) error = %v", err)
+	}
+	if err := a.CreateIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
+		t.Fatalf("CreateIntermediateCA() error = %v", err)
+	}
+	// Intermediate-signed client cert.
+	if err := a.CreateServerCert("int-leaf@example.com", nil, 1, "", "", true, "client"); err != nil {
+		t.Fatalf("CreateServerCert(client, intermediate) error = %v", err)
+	}
+	certs, err := a.ListCerts()
+	if err != nil {
+		t.Fatalf("ListCerts() error = %v", err)
+	}
+	if len(certs) != 2 {
+		t.Fatalf("ListCerts() len = %d, want 2", len(certs))
+	}
+
+	for _, c := range certs {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/download?kind=client-p12&id="+c.ID, nil)
+		handleDownload(a, rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("client-p12 status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+		}
+		_, _, caCerts, err := pkcs12.DecodeChain(rr.Body.Bytes(), pkcs12.DefaultPassword)
+		if err != nil {
+			t.Fatalf("pkcs12 decode %s error = %v", c.CommonName, err)
+		}
+		if c.Signer == "intermediate" {
+			if len(caCerts) != 2 {
+				t.Fatalf("intermediate-signed p12 caCerts = %d, want 2 (intermediate + root)", len(caCerts))
+			}
+		} else {
+			if len(caCerts) != 1 {
+				t.Fatalf("root-signed p12 caCerts = %d, want 1 (root only)", len(caCerts))
+			}
+		}
+	}
+}
+
 func TestExportClientCertP12RequiresUnencryptedKey(t *testing.T) {
 	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
 	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {

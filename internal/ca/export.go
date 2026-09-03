@@ -249,6 +249,19 @@ func WriteCertificateP12(w http.ResponseWriter, certDir, safeID, dataDir, export
 		return err
 	}
 
+	// Bundle the CAs that belong in this certificate's actual issuer chain.
+	// A root-signed leaf gets just the root; an intermediate-signed leaf gets
+	// the intermediate plus the root. Legacy metadata (no Signer) keeps the
+	// historical default-signer behavior.
+	var meta CertMetadata
+	if metaJSON, err := os.ReadFile(filepath.Join(certDir, "metadata.json")); err == nil {
+		_ = json.Unmarshal(metaJSON, &meta)
+	}
+	hasIntermediate := false
+	if _, err := os.Stat(filepath.Join(dataDir, "intermediate-cert.pem")); err == nil {
+		hasIntermediate = true
+	}
+	includeIntermediate := hasIntermediate && meta.SignerName(hasIntermediate) == "intermediate"
 	var caCerts []*x509.Certificate
 	caPEM, err := os.ReadFile(filepath.Join(dataDir, "ca-cert.pem"))
 	if err == nil {
@@ -258,10 +271,12 @@ func WriteCertificateP12(w http.ResponseWriter, certDir, safeID, dataDir, export
 			}
 		}
 	}
-	if intPEM, err := os.ReadFile(filepath.Join(dataDir, "intermediate-cert.pem")); err == nil {
-		if block, _ := pem.Decode(intPEM); block != nil {
-			if intCert, perr := x509.ParseCertificate(block.Bytes); perr == nil {
-				caCerts = append([]*x509.Certificate{intCert}, caCerts...)
+	if includeIntermediate {
+		if intPEM, err := os.ReadFile(filepath.Join(dataDir, "intermediate-cert.pem")); err == nil {
+			if block, _ := pem.Decode(intPEM); block != nil {
+				if intCert, perr := x509.ParseCertificate(block.Bytes); perr == nil {
+					caCerts = append([]*x509.Certificate{intCert}, caCerts...)
+				}
 			}
 		}
 	}
