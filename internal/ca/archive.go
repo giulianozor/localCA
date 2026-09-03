@@ -1,4 +1,4 @@
-package main
+package ca
 
 import (
 	"archive/tar"
@@ -15,9 +15,9 @@ import (
 	"strings"
 )
 
-// caArchiveName returns the explicit list of top-level files that make up a
+// CAArchiveFiles returns the explicit list of top-level files that make up a
 // whole-CA archive, in a deterministic order.
-func caArchiveFiles() []string {
+func CAArchiveFiles() []string {
 	return []string{
 		"config.json",
 		"ca-cert.pem",
@@ -31,27 +31,27 @@ func caArchiveFiles() []string {
 	}
 }
 
-// buildCAArchive builds a tar.gz of the whole CA state (top-level files plus
+// BuildCAArchive builds a tar.gz of the whole CA state (top-level files plus
 // the issued certs/ tree) and returns the archived bytes.
-func (a *app) buildCAArchive() ([]byte, error) {
+func (a *App) BuildCAArchive() ([]byte, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
 
-	for _, name := range caArchiveFiles() {
-		content, err := os.ReadFile(filepath.Join(a.dataDir, name))
+	for _, name := range CAArchiveFiles() {
+		content, err := os.ReadFile(filepath.Join(a.DataDir, name))
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return nil, err
 		}
-		if err := appendTarFile(tw, name, content, 0o640); err != nil {
+		if err := AppendTarFile(tw, name, content, 0o640); err != nil {
 			return nil, err
 		}
 	}
 
-	entries, err := os.ReadDir(filepath.Join(a.dataDir, "certs"))
+	entries, err := os.ReadDir(filepath.Join(a.DataDir, "certs"))
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (a *app) buildCAArchive() ([]byte, error) {
 		if !e.IsDir() {
 			continue
 		}
-		subDir := filepath.Join(a.dataDir, "certs", e.Name())
+		subDir := filepath.Join(a.DataDir, "certs", e.Name())
 		files, err := os.ReadDir(subDir)
 		if err != nil {
 			return nil, err
@@ -77,7 +77,7 @@ func (a *app) buildCAArchive() ([]byte, error) {
 			if strings.HasSuffix(f.Name(), ".pem") && strings.Contains(f.Name(), "key") {
 				mode = 0o600
 			}
-			if err := appendTarFile(tw, name, content, mode); err != nil {
+			if err := AppendTarFile(tw, name, content, mode); err != nil {
 				return nil, err
 			}
 		}
@@ -92,7 +92,7 @@ func (a *app) buildCAArchive() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func appendTarFile(tw *tar.Writer, name string, content []byte, mode os.FileMode) error {
+func AppendTarFile(tw *tar.Writer, name string, content []byte, mode os.FileMode) error {
 	hdr := &tar.Header{
 		Name: name,
 		Mode: int64(mode),
@@ -105,9 +105,9 @@ func appendTarFile(tw *tar.Writer, name string, content []byte, mode os.FileMode
 	return err
 }
 
-// safeArchivePath validates a tar entry name and returns the corresponding
+// SafeArchivePath validates a tar entry name and returns the corresponding
 // path under base, rejecting traversal and absolute paths.
-func safeArchivePath(base, name string) (string, error) {
+func SafeArchivePath(base, name string) (string, error) {
 	if name == "" {
 		return "", errors.New("empty path in archive")
 	}
@@ -122,16 +122,16 @@ func safeArchivePath(base, name string) (string, error) {
 	return full, nil
 }
 
-// writeCAArchive streams a whole-CA archive to the response with optional
+// WriteCAArchive streams a whole-CA archive to the response with optional
 // passphrase encryption.
-func (a *app) writeCAArchive(w http.ResponseWriter, exportPassphrase string) error {
-	raw, err := a.buildCAArchive()
+func (a *App) WriteCAArchive(w http.ResponseWriter, exportPassphrase string) error {
+	raw, err := a.BuildCAArchive()
 	if err != nil {
 		return err
 	}
 	payload := raw
 	if exportPassphrase != "" {
-		payload, err = encryptCAArchive(raw, exportPassphrase)
+		payload, err = EncryptCAArchive(raw, exportPassphrase)
 		if err != nil {
 			return err
 		}
@@ -142,25 +142,25 @@ func (a *app) writeCAArchive(w http.ResponseWriter, exportPassphrase string) err
 	return err
 }
 
-// importCAArchive restores a whole-CA archive (plain tar.gz or encrypted) into
+// ImportCAArchive restores a whole-CA archive (plain tar.gz or encrypted) into
 // the data directory. It refuses to run when a CA already exists.
-func (a *app) importCAArchive(r io.Reader, importPassphrase string) error {
-	if _, hasCA, err := a.loadConfig(); err != nil {
+func (a *App) ImportCAArchive(r io.Reader, importPassphrase string) error {
+	if _, hasCA, err := a.LoadConfig(); err != nil {
 		return err
 	} else if hasCA {
 		return errors.New("a CA already exists: restore into an empty data directory")
 	}
 
-	limited := io.LimitReader(r, maxImportArchive)
+	limited := io.LimitReader(r, MaxImportArchive)
 	data, err := io.ReadAll(limited)
 	if err != nil {
 		return err
 	}
-	if len(data) >= maxImportArchive {
+	if len(data) >= MaxImportArchive {
 		return errors.New("imported archive is too large")
 	}
 
-	payload, encrypted, err := decryptCAArchive(data, importPassphrase)
+	payload, encrypted, err := DecryptCAArchive(data, importPassphrase)
 	if err != nil {
 		return err
 	}
@@ -192,12 +192,12 @@ func (a *app) importCAArchive(r io.Reader, importPassphrase string) error {
 		if err != nil {
 			return errors.New("corrupted CA archive: " + err.Error())
 		}
-		full, err := safeArchivePath(a.dataDir, hdr.Name)
+		full, err := SafeArchivePath(a.DataDir, hdr.Name)
 		if err != nil {
 			return err
 		}
 		dir := filepath.Dir(full)
-		if strings.HasPrefix(full, filepath.Join(a.dataDir, "certs")) && !strings.HasSuffix(hdr.Name, "/") {
+		if strings.HasPrefix(full, filepath.Join(a.DataDir, "certs")) && !strings.HasSuffix(hdr.Name, "/") {
 			dirs = append(dirs, dir)
 		}
 		if strings.HasSuffix(hdr.Name, "/") {
@@ -233,21 +233,21 @@ func (a *app) importCAArchive(r io.Reader, importPassphrase string) error {
 		}
 	}
 
-	_, has, err := a.loadConfig()
+	_, has, err := a.LoadConfig()
 	if err != nil {
 		return err
 	}
 	if !has {
 		return errors.New("imported archive contains no valid configuration")
 	}
-	if err := a.verifyImportedCA(); err != nil {
+	if err := a.VerifyImportedCA(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (a *app) verifyImportedCA() error {
-	caPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
+func (a *App) VerifyImportedCA() error {
+	caPEM, err := os.ReadFile(filepath.Join(a.DataDir, "ca-cert.pem"))
 	if err != nil {
 		return errors.New("imported CA certificate missing")
 	}
@@ -260,11 +260,11 @@ func (a *app) verifyImportedCA() error {
 		return errors.New("imported CA certificate invalid")
 	}
 
-	keyPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-key.pem"))
+	keyPEM, err := os.ReadFile(filepath.Join(a.DataDir, "ca-key.pem"))
 	if err != nil {
 		return errors.New("imported CA key missing")
 	}
-	caKey, err := parseUnencryptedPrivateKeyPEM(keyPEM)
+	caKey, err := ParseUnencryptedPrivateKeyPEM(keyPEM)
 	if err != nil {
 		return errors.New("imported CA key is encrypted or invalid")
 	}

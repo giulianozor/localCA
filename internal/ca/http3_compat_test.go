@@ -1,4 +1,4 @@
-package main
+package ca
 
 import (
 	"crypto/tls"
@@ -17,16 +17,16 @@ import (
 // development.
 func TestHTTP3TLSCertCompatibility(t *testing.T) {
 	tempDir := t.TempDir()
-	a := &app{dataDir: tempDir, defaultLang: "en"}
-	if err := a.createCA("Local Dev CA", "localCA", "IT", ""); err != nil {
-		t.Fatalf("createCA() error = %v", err)
+	a := &App{DataDir: tempDir, DefaultLang: "en"}
+	if err := a.CreateCA("Local Dev CA", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
 	}
-	if err := a.createServerCert("localhost", []string{
+	if err := a.CreateServerCert("localhost", []string{
 		"localhost",
 		"127.0.0.1",
 		"::1",
-	}, 1, "", "", a.hasIntermediate(), "server"); err != nil {
-		t.Fatalf("createServerCert() error = %v", err)
+	}, 1, "", "", a.HasIntermediate(), "server"); err != nil {
+		t.Fatalf("CreateServerCert() error = %v", err)
 	}
 
 	certDir := filepath.Join(tempDir, "certs")
@@ -155,13 +155,4 @@ func TestHTTP3TLSCertCompatibility(t *testing.T) {
 	if caCert.SignatureAlgorithm == x509.SHA1WithRSA || caCert.SignatureAlgorithm == x509.MD5WithRSA {
 		t.Fatalf("CA uses insecure signature algorithm %v", caCert.SignatureAlgorithm)
 	}
-}
-
-func containsExtKeyUsage(usages []x509.ExtKeyUsage, want x509.ExtKeyUsage) bool {
-	for _, u := range usages {
-		if u == want {
-			return true
-		}
-	}
-	return false
 }

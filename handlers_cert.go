@@ -7,22 +7,24 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/giulianozor/localCA/internal/ca"
 )
 
-func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
+func handleCreateCert(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
 
@@ -33,7 +35,7 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 	switch certType {
 	case "server", "client", "dot1x", "codeSigning":
 	default:
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_type")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.invalid_cert_type")), http.StatusSeeOther)
 		return
 	}
 	isIdentityCert := certType != "server"
@@ -41,9 +43,9 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 	var sans []string
 	var sansErr error
 	if isIdentityCert {
-		sans, sansErr = parseSANsOptional(sansInput)
+		sans, sansErr = ca.ParseSANsOptional(sansInput)
 	} else {
-		sans, sansErr = parseSANs(sansInput)
+		sans, sansErr = ca.ParseSANs(sansInput)
 	}
 	if sansErr != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(sansErr.Error()), http.StatusSeeOther)
@@ -54,11 +56,11 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 		if len(sans) > 0 {
 			commonName = sans[0]
 		} else if isIdentityCert {
-			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.identity_cn_required")), http.StatusSeeOther)
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.identity_cn_required")), http.StatusSeeOther)
 			return
 		}
 	}
-	years, err := parseValidityYears(r.FormValue("validity_years"))
+	years, err := ca.ParseValidityYears(r.FormValue("validity_years"))
 	if err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
@@ -66,7 +68,7 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 	keyPassphrase := strings.TrimSpace(r.FormValue("key_passphrase"))
 
 	signer := r.FormValue("signer")
-	useIntermediate := a.hasIntermediate() && signer != "ca"
+	useIntermediate := a.HasIntermediate() && signer != "ca"
 	var requiresSignerPassphrase bool
 	if useIntermediate {
 		requiresSignerPassphrase = cfg.IntermediatePassphraseSet
@@ -75,224 +77,224 @@ func (a *app) handleCreateCert(w http.ResponseWriter, r *http.Request) {
 	}
 	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
 	if requiresSignerPassphrase && signerPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
 
-	if err := a.createServerCert(commonName, sans, years, keyPassphrase, signerPassphrase, useIntermediate, certType); err != nil {
+	if err := a.CreateServerCert(commonName, sans, years, keyPassphrase, signerPassphrase, useIntermediate, certType); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.cert_created")), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.Translate(lang, "msg.cert_created")), http.StatusSeeOther)
 }
 
-func (a *app) handleDeleteCert(w http.ResponseWriter, r *http.Request) {
+func handleDeleteCert(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
 
 	id := strings.TrimSpace(r.FormValue("id"))
-	path, safeID, err := a.resolveCertificateDir(id)
+	path, safeID, err := a.ResolveCertificateDir(id)
 	if err != nil {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
 		return
 	}
 	if err := os.RemoveAll(path); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_deleted"), safeID)), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.Translate(lang, "msg.cert_deleted"), safeID)), http.StatusSeeOther)
 }
 
-func (a *app) handleChangeCertPassphrase(w http.ResponseWriter, r *http.Request) {
+func handleChangeCertPassphrase(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
 	currentPassphrase := strings.TrimSpace(r.FormValue("current_passphrase"))
 	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
-	if err := a.changeCertificatePassphrase(id, currentPassphrase, newPassphrase); err != nil {
-		if errors.Is(err, errCertificateIDInvalid) {
-			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
+	if err := a.ChangeCertificatePassphrase(id, currentPassphrase, newPassphrase); err != nil {
+		if errors.Is(err, ca.ErrCertificateIDInvalid) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
 			return
 		}
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_passphrase_updated"), id)), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.Translate(lang, "msg.cert_passphrase_updated"), id)), http.StatusSeeOther)
 }
 
-func (a *app) handleRevokeCert(w http.ResponseWriter, r *http.Request) {
+func handleRevokeCert(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
-	certDir, safeID, err := a.resolveCertificateDir(id)
+	certDir, safeID, err := a.ResolveCertificateDir(id)
 	if err != nil {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
 		return
 	}
-	meta, err := a.loadCertMetadata(certDir)
+	meta, err := a.LoadCertMetadata(certDir)
 	if err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 	if meta.RevokedAt != nil {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_already_revoked"), safeID)), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(fmt.Sprintf(a.Translate(lang, "msg.cert_already_revoked"), safeID)), http.StatusSeeOther)
 		return
 	}
 	now := timeNow()
 	meta.RevokedAt = &now
-	if err := a.saveCertMetadata(certDir, meta); err != nil {
+	if err := a.SaveCertMetadata(certDir, meta); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_revoked"), safeID)), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.Translate(lang, "msg.cert_revoked"), safeID)), http.StatusSeeOther)
 }
 
-func (a *app) handleRenewCert(w http.ResponseWriter, r *http.Request) {
+func handleRenewCert(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
-	certDir, safeID, err := a.resolveCertificateDir(id)
+	certDir, safeID, err := a.ResolveCertificateDir(id)
 	if err != nil {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
 		return
 	}
-	meta, err := a.loadCertMetadata(certDir)
+	meta, err := a.LoadCertMetadata(certDir)
 	if err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 	keyPassphrase := strings.TrimSpace(r.FormValue("key_passphrase"))
 	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
-	if cfg.signerPassphraseRequired(a.hasIntermediate()) && signerPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+	if cfg.SignerPassphraseRequired(a.HasIntermediate()) && signerPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.createServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, a.hasIntermediate(), meta.CertType()); err != nil {
+	if err := a.CreateServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, a.HasIntermediate(), meta.CertType()); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 	if meta.RevokedAt == nil {
 		now := timeNow()
 		meta.RevokedAt = &now
-		if err := a.saveCertMetadata(certDir, meta); err != nil {
+		if err := a.SaveCertMetadata(certDir, meta); err != nil {
 			http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 			return
 		}
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.translate(lang, "msg.cert_renewed"), safeID)), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(fmt.Sprintf(a.Translate(lang, "msg.cert_renewed"), safeID)), http.StatusSeeOther)
 }
 
-func (a *app) handleGenerateCRL(w http.ResponseWriter, r *http.Request) {
+func handleGenerateCRL(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
 	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
-	if cfg.signerPassphraseRequired(a.hasIntermediate()) && signerPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+	if cfg.SignerPassphraseRequired(a.HasIntermediate()) && signerPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.generateCRL(lang, signerPassphrase); err != nil {
+	if err := a.GenerateCRL(lang, signerPassphrase); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.crl_generated")), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.Translate(lang, "msg.crl_generated")), http.StatusSeeOther)
 }
 
-func (a *app) handleCertTable(w http.ResponseWriter, r *http.Request) {
+func handleCertTable(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, hasCA, err := a.loadConfig()
+	cfg, hasCA, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, hasCA)
-	certs, err := a.listCerts()
+	lang := a.CurrentLanguage(cfg, hasCA)
+	certs, err := a.ListCerts()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	sortCertsDesc(certs)
-	certs = filterCertificates(certs, r.URL.Query().Get("q"))
+	ca.SortCertsDesc(certs)
+	certs = ca.FilterCertificates(certs, r.URL.Query().Get("q"))
 	if certType := r.URL.Query().Get("type"); certType != "" {
 		switch certType {
 		case "server", "client", "dot1x", "codeSigning":
-			certs = filterCertificatesByType(certs, certType)
+			certs = ca.FilterCertificatesByType(certs, certType)
 		default:
 			http.Error(w, "unknown certificate type", http.StatusBadRequest)
 			return
 		}
 	}
-	data := pageData{
+	data := ca.PageData{
 		Certificates:             certs,
-		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(a.hasIntermediate()),
-		T:                        a.translations[lang],
+		SignerPassphraseRequired: hasCA && cfg.SignerPassphraseRequired(a.HasIntermediate()),
+		T:                        a.Translations[lang],
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := certTableRowsTemplate.Execute(w, data); err != nil {
+	if err := ca.CertTableRowsTemplate.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -1,4 +1,4 @@
-package main
+package ca
 
 import (
 	"embed"
@@ -8,40 +8,40 @@ import (
 	"strings"
 )
 
-func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
-	cfg, hasCA, err := a.loadConfig()
+func (a *App) RenderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
+	cfg, hasCA, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	certs, err := a.listCerts()
+	certs, err := a.ListCerts()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	sortCertsDesc(certs)
+	SortCertsDesc(certs)
 	filter := strings.TrimSpace(r.URL.Query().Get("q"))
-	certs = filterCertificates(certs, filter)
-	lang := a.currentLanguage(cfg, hasCA)
+	certs = FilterCertificates(certs, filter)
+	lang := a.CurrentLanguage(cfg, hasCA)
 
-	data := pageData{
+	data := PageData{
 		HasCA:                    hasCA,
-		HasIntermediate:          hasCA && a.hasIntermediate(),
-		HasCRL:                   a.hasCRL(),
-		CAYears:                  caYears,
-		IntermediateYears:        intermediateYears,
+		HasIntermediate:          hasCA && a.HasIntermediate(),
+		HasCRL:                   a.HasCRL(),
+		CAYears:                  CAYears,
+		IntermediateYears:        IntermediateYears,
 		Config:                   cfg,
 		Certificates:             certs,
 		CertFilter:               filter,
 		Message:                  msg,
 		Error:                    errMsg,
-		DefaultCertYears:         defaultCertValidityYears,
-		MaxCertYears:             maxCertValidityYear,
-		SignerPassphraseRequired: hasCA && cfg.signerPassphraseRequired(a.hasIntermediate()),
+		DefaultCertYears:         DefaultCertValidityYears,
+		MaxCertYears:             MaxCertValidityYear,
+		SignerPassphraseRequired: hasCA && cfg.SignerPassphraseRequired(a.HasIntermediate()),
 		Lang:                     lang,
-		T:                        a.translations[lang],
+		T:                        a.Translations[lang],
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -51,7 +51,7 @@ func (a *app) renderIndex(w http.ResponseWriter, r *http.Request, msg, errMsg st
 	}
 }
 
-func handleStyles(w http.ResponseWriter, r *http.Request) {
+func HandleStyles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -60,7 +60,7 @@ func handleStyles(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, stylesCSS)
 }
 
-func handleAppJS(w http.ResponseWriter, r *http.Request) {
+func HandleAppJS(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -82,10 +82,10 @@ var appJS string
 var certTableRowsHTML string
 
 //go:embed i18n/*.json
-var embeddedI18n embed.FS
+var EmbeddedI18n embed.FS
 
-var certTableRowsTemplate = template.Must(template.New("cert-table-rows").Parse(certTableRowsHTML))
+var CertTableRowsTemplate = template.Must(template.New("cert-table-rows").Parse(certTableRowsHTML))
 
 var indexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
-	"certTableArgs": certTableArgs,
+	"certTableArgs": CertTableArgs,
 }).Parse(indexHTML))

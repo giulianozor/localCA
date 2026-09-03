@@ -1,4 +1,4 @@
-package main
+package ca
 
 import (
 	"errors"
@@ -6,39 +6,43 @@ import (
 )
 
 const (
-	caYears                  = 100
-	intermediateYears        = 30
-	maxCertValidityYear      = 30
-	defaultCertValidityYears = 2
-	defaultLanguage          = "en"
-	certNotBeforeOffset      = -1 * time.Hour
-	crlNextUpdateDays        = 7
+	CAYears                  = 100
+	IntermediateYears        = 30
+	MaxCertValidityYear      = 30
+	DefaultCertValidityYears = 2
+	DefaultLanguage          = "en"
+	CertNotBeforeOffset      = -1 * time.Hour
+	CRLNextUpdateDays        = 7
 
-	caArchiveMagic   = "localCA-CA-ARCHIVE-V1" // magic prefix for encrypted CA archives
-	caEncKeyIter     = 210000                  // PBKDF2 iterations for CA archive encryption
-	caEncKeyLen      = 32
-	caEncSaltLen     = 16
-	caEncNonceLen    = 12
-	maxImportArchive = 512 << 20 // 512 MB cap for imported CA archives
+	CAArchiveMagic   = "localCA-CA-ARCHIVE-V1" // magic prefix for encrypted CA archives
+	CAEncKeyIter     = 210000                  // PBKDF2 iterations for CA archive encryption
+	CAEncKeyLen      = 32
+	CAEncSaltLen     = 16
+	CAEncNonceLen    = 12
+	MaxImportArchive = 512 << 20 // 512 MB cap for imported CA archives
 )
 
 const (
-	archiveCryptNone uint8 = iota
-	archiveCryptAESGCM
+	ArchiveCryptNone uint8 = iota
+	ArchiveCryptAESGCM
 )
 
 var (
-	errCAConfigNotFound     = errors.New("ca configuration not found")
-	errCertificateIDInvalid = errors.New("invalid certificate id")
+	ErrCAConfigNotFound     = errors.New("ca configuration not found")
+	ErrCertificateIDInvalid = errors.New("invalid certificate id")
 )
 
-type app struct {
-	dataDir      string
-	defaultLang  string
-	translations map[string]map[string]string
+// App is the core Certificate Authority domain object. It encapsulates the
+// data directory, default language and translation maps used across the CA,
+// certificate management, archive and export operations.
+type App struct {
+	DataDir      string
+	DefaultLang  string
+	Translations map[string]map[string]string
 }
 
-type config struct {
+// Config is the persisted CA configuration.
+type Config struct {
 	CreatedAt                 time.Time `json:"created_at"`
 	CACommonName              string    `json:"ca_common_name"`
 	Organization              string    `json:"organization"`
@@ -54,11 +58,12 @@ type config struct {
 	IntermediatePassphraseSet bool      `json:"intermediate_passphrase_set,omitempty"`
 }
 
-type certMetadata struct {
+// CertMetadata describes an issued certificate.
+type CertMetadata struct {
 	ID            string     `json:"id"`
 	CommonName    string     `json:"common_name"`
 	SANs          []string   `json:"sans"`
-	Type          string     `json:"type,omitempty"`   // server, client, dot1x
+	Type          string     `json:"type,omitempty"`   // server, client, dot1x, codeSigning
 	Client        bool       `json:"client,omitempty"` // legacy field, kept for older metadata files
 	ValidityYears int        `json:"validity_years"`
 	CreatedAt     time.Time  `json:"created_at"`
@@ -67,7 +72,7 @@ type certMetadata struct {
 
 // CertType returns the normalized certificate type, mapping legacy metadata
 // (which only tracked the Client flag) onto the current "type" values.
-func (c certMetadata) CertType() string {
+func (c CertMetadata) CertType() string {
 	if c.Type != "" {
 		return c.Type
 	}
@@ -77,21 +82,22 @@ func (c certMetadata) CertType() string {
 	return "server"
 }
 
-func (c config) signerPassphraseRequired(hasIntermediate bool) bool {
+func (c Config) SignerPassphraseRequired(hasIntermediate bool) bool {
 	if hasIntermediate {
 		return c.IntermediatePassphraseSet
 	}
 	return c.CAPassphraseSet
 }
 
-type pageData struct {
+// PageData carries the data needed to render the tabbed index page.
+type PageData struct {
 	HasCA                    bool
 	HasIntermediate          bool
 	HasCRL                   bool
 	CAYears                  int
 	IntermediateYears        int
-	Config                   config
-	Certificates             []certMetadata
+	Config                   Config
+	Certificates             []CertMetadata
 	CertFilter               string
 	Message                  string
 	Error                    string
@@ -102,24 +108,24 @@ type pageData struct {
 	T                        map[string]string
 }
 
-// certTableCtx carries the data needed to render the certificate table for a
+// CertTableCtx carries the data needed to render the certificate table for a
 // single certificate type inside the tabbed index page.
-type certTableCtx struct {
+type CertTableCtx struct {
 	T            map[string]string
 	CertType     string
 	Title        string
 	CertFilter   string
-	Certificates []certMetadata
+	Certificates []CertMetadata
 }
 
-// certTableArgs returns the rendering context for a certificate type's table,
+// CertTableArgs returns the rendering context for a certificate type's table,
 // filtering the full certificate list down to the requested type.
-func certTableArgs(root pageData, certType, title string) certTableCtx {
-	return certTableCtx{
+func CertTableArgs(root PageData, certType, title string) CertTableCtx {
+	return CertTableCtx{
 		T:            root.T,
 		CertType:     certType,
 		Title:        title,
 		CertFilter:   root.CertFilter,
-		Certificates: filterCertificatesByType(root.Certificates, certType),
+		Certificates: FilterCertificatesByType(root.Certificates, certType),
 	}
 }

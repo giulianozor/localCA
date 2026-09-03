@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/giulianozor/localCA/internal/ca"
 )
 
 func main() {
@@ -19,32 +21,32 @@ func main() {
 	if err := os.MkdirAll(filepath.Join(dataDir, "certs"), 0o750); err != nil {
 		log.Fatalf("unable to create data directory: %v", err)
 	}
-	translations, err := loadTranslations()
+	translations, err := ca.LoadTranslations()
 	if err != nil {
 		log.Fatalf("unable to load translations: %v", err)
 	}
 
-	a := &app{dataDir: dataDir, defaultLang: lang, translations: translations}
+	a := &ca.App{DataDir: dataDir, DefaultLang: lang, Translations: translations}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", a.handleIndex)
-	mux.HandleFunc("/lang", a.handleSetLanguage)
-	mux.HandleFunc("/ca/create", a.handleCreateCA)
-	mux.HandleFunc("/ca/import", a.handleImportCA)
-	mux.HandleFunc("/ca/passphrase", a.handleChangeCAPassphrase)
-	mux.HandleFunc("/ca/renew", a.handleRenewCA)
-	mux.HandleFunc("/intermediate/create", a.handleCreateIntermediate)
-	mux.HandleFunc("/intermediate/renew", a.handleRenewIntermediate)
-	mux.HandleFunc("/intermediate/passphrase", a.handleChangeIntermediatePassphrase)
-	mux.HandleFunc("/certs/create", a.handleCreateCert)
-	mux.HandleFunc("/certs/passphrase", a.handleChangeCertPassphrase)
-	mux.HandleFunc("/certs/revoke", a.handleRevokeCert)
-	mux.HandleFunc("/certs/renew", a.handleRenewCert)
-	mux.HandleFunc("/certs/delete", a.handleDeleteCert)
-	mux.HandleFunc("/certs/table", a.handleCertTable)
-	mux.HandleFunc("/certs/crl/generate", a.handleGenerateCRL)
-	mux.HandleFunc("/download", a.handleDownload)
-	mux.HandleFunc("/static/styles.css", handleStyles)
-	mux.HandleFunc("/static/app.js", handleAppJS)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { handleIndex(a, w, r) })
+	mux.HandleFunc("/lang", func(w http.ResponseWriter, r *http.Request) { handleSetLanguage(a, w, r) })
+	mux.HandleFunc("/ca/create", func(w http.ResponseWriter, r *http.Request) { handleCreateCA(a, w, r) })
+	mux.HandleFunc("/ca/import", func(w http.ResponseWriter, r *http.Request) { handleImportCA(a, w, r) })
+	mux.HandleFunc("/ca/passphrase", func(w http.ResponseWriter, r *http.Request) { handleChangeCAPassphrase(a, w, r) })
+	mux.HandleFunc("/ca/renew", func(w http.ResponseWriter, r *http.Request) { handleRenewCA(a, w, r) })
+	mux.HandleFunc("/intermediate/create", func(w http.ResponseWriter, r *http.Request) { handleCreateIntermediate(a, w, r) })
+	mux.HandleFunc("/intermediate/renew", func(w http.ResponseWriter, r *http.Request) { handleRenewIntermediate(a, w, r) })
+	mux.HandleFunc("/intermediate/passphrase", func(w http.ResponseWriter, r *http.Request) { handleChangeIntermediatePassphrase(a, w, r) })
+	mux.HandleFunc("/certs/create", func(w http.ResponseWriter, r *http.Request) { handleCreateCert(a, w, r) })
+	mux.HandleFunc("/certs/passphrase", func(w http.ResponseWriter, r *http.Request) { handleChangeCertPassphrase(a, w, r) })
+	mux.HandleFunc("/certs/revoke", func(w http.ResponseWriter, r *http.Request) { handleRevokeCert(a, w, r) })
+	mux.HandleFunc("/certs/renew", func(w http.ResponseWriter, r *http.Request) { handleRenewCert(a, w, r) })
+	mux.HandleFunc("/certs/delete", func(w http.ResponseWriter, r *http.Request) { handleDeleteCert(a, w, r) })
+	mux.HandleFunc("/certs/table", func(w http.ResponseWriter, r *http.Request) { handleCertTable(a, w, r) })
+	mux.HandleFunc("/certs/crl/generate", func(w http.ResponseWriter, r *http.Request) { handleGenerateCRL(a, w, r) })
+	mux.HandleFunc("/download", func(w http.ResponseWriter, r *http.Request) { handleDownload(a, w, r) })
+	mux.HandleFunc("/static/styles.css", ca.HandleStyles)
+	mux.HandleFunc("/static/app.js", ca.HandleAppJS)
 
 	addr := fmt.Sprintf(":%d", port)
 	log.Printf("localCA UI available on all interfaces (port %d), access via http://<host-ip-or-hostname>:%d", port, port)
@@ -57,14 +59,14 @@ func parseArgs(args []string) (string, int, string, error) {
 	fs := flag.NewFlagSet("localCA", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	port := fs.Int("port", 8080, "HTTP port for the web server")
-	lang := fs.String("lang", defaultLanguage, "UI language (en|it|ja)")
+	lang := fs.String("lang", ca.DefaultLanguage, "UI language (en|it|ja)")
 	if err := fs.Parse(args); err != nil {
 		return "", 0, "", err
 	}
 	if *port < 1 || *port > 65535 {
 		return "", 0, "", errors.New("invalid port: use a value between 1 and 65535")
 	}
-	if !isSupportedLanguage(*lang) {
+	if !ca.IsSupportedLanguage(*lang) {
 		return "", 0, "", errors.New("invalid language: use en, it or ja")
 	}
 	remaining := fs.Args()

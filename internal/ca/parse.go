@@ -1,4 +1,4 @@
-package main
+package ca
 
 import (
 	"errors"
@@ -10,22 +10,22 @@ import (
 	"strings"
 )
 
-func parseValidityYears(raw string) (int, error) {
+func ParseValidityYears(raw string) (int, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return defaultCertValidityYears, nil
+		return DefaultCertValidityYears, nil
 	}
 	years, err := strconv.Atoi(raw)
 	if err != nil {
 		return 0, errors.New("invalid validity value")
 	}
-	if years < 1 || years > maxCertValidityYear {
-		return 0, fmt.Errorf("validity must be between 1 and %d years", maxCertValidityYear)
+	if years < 1 || years > MaxCertValidityYear {
+		return 0, fmt.Errorf("validity must be between 1 and %d years", MaxCertValidityYear)
 	}
 	return years, nil
 }
 
-func parseSANs(input string) ([]string, error) {
+func ParseSANs(input string) ([]string, error) {
 	parts := strings.Split(input, ",")
 	seen := map[string]struct{}{}
 	result := make([]string, 0, len(parts))
@@ -46,17 +46,17 @@ func parseSANs(input string) ([]string, error) {
 	return result, nil
 }
 
-// parseSANsOptional parses a comma-separated SAN list, returning an empty
+// ParseSANsOptional parses a comma-separated SAN list, returning an empty
 // slice (not an error) when the input is blank. Used for client certificates,
 // where the CommonName is the identity and SANs are not required.
-func parseSANsOptional(input string) ([]string, error) {
+func ParseSANsOptional(input string) ([]string, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, nil
 	}
-	return parseSANs(input)
+	return ParseSANs(input)
 }
 
-func splitSANs(sans []string) ([]string, []net.IP) {
+func SplitSANs(sans []string) ([]string, []net.IP) {
 	dnsNames := make([]string, 0, len(sans))
 	ipAddresses := make([]net.IP, 0, len(sans))
 	for _, san := range sans {
@@ -69,12 +69,12 @@ func splitSANs(sans []string) ([]string, []net.IP) {
 	return dnsNames, ipAddresses
 }
 
-func filterCertificates(certs []certMetadata, query string) []certMetadata {
+func FilterCertificates(certs []CertMetadata, query string) []CertMetadata {
 	query = strings.TrimSpace(strings.ToLower(query))
 	if query == "" {
 		return certs
 	}
-	filtered := make([]certMetadata, 0, len(certs))
+	filtered := make([]CertMetadata, 0, len(certs))
 	for _, cert := range certs {
 		if strings.Contains(strings.ToLower(cert.ID), query) ||
 			strings.Contains(strings.ToLower(cert.CommonName), query) ||
@@ -85,10 +85,10 @@ func filterCertificates(certs []certMetadata, query string) []certMetadata {
 	return filtered
 }
 
-// filterCertificatesByType keeps only certificates of the given type
+// FilterCertificatesByType keeps only certificates of the given type
 // (server, client, dot1x or codeSigning).
-func filterCertificatesByType(certs []certMetadata, certType string) []certMetadata {
-	filtered := make([]certMetadata, 0, len(certs))
+func FilterCertificatesByType(certs []CertMetadata, certType string) []CertMetadata {
+	filtered := make([]CertMetadata, 0, len(certs))
 	for _, cert := range certs {
 		if cert.CertType() == certType {
 			filtered = append(filtered, cert)
@@ -97,18 +97,27 @@ func filterCertificatesByType(certs []certMetadata, certType string) []certMetad
 	return filtered
 }
 
-func (a *app) resolveCertificateDir(id string) (string, string, error) {
+func (a *App) ResolveCertificateDir(id string) (string, string, error) {
 	if id == "" {
 		return "", "", errors.New("missing certificate ID")
 	}
-	entries, err := os.ReadDir(filepath.Join(a.dataDir, "certs"))
+	entries, err := os.ReadDir(filepath.Join(a.DataDir, "certs"))
 	if err != nil {
 		return "", "", errors.New("certificate archive not available")
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && entry.Name() == id {
-			return filepath.Join(a.dataDir, "certs", entry.Name()), entry.Name(), nil
+			return filepath.Join(a.DataDir, "certs", entry.Name()), entry.Name(), nil
 		}
 	}
 	return "", "", errors.New("invalid certificate ID")
+}
+
+// SortCertsDesc sorts certificates by CreatedAt, most recent first.
+func SortCertsDesc(certs []CertMetadata) {
+	for i := 1; i < len(certs); i++ {
+		for j := i; j > 0 && certs[j].CreatedAt.After(certs[j-1].CreatedAt); j-- {
+			certs[j], certs[j-1] = certs[j-1], certs[j]
+		}
+	}
 }

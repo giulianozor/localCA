@@ -5,22 +5,24 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/giulianozor/localCA/internal/ca"
 )
 
-func (a *app) handleCreateCA(w http.ResponseWriter, r *http.Request) {
+func handleCreateCA(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_already_exists")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.ca_already_exists")), http.StatusSeeOther)
 		return
 	}
 
@@ -38,95 +40,95 @@ func (a *app) handleCreateCA(w http.ResponseWriter, r *http.Request) {
 	}
 	passphrase := strings.TrimSpace(r.FormValue("ca_passphrase"))
 
-	if err := a.createCA(cn, org, country, passphrase); err != nil {
+	if err := a.CreateCA(cn, org, country, passphrase); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.ca_created")), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.Translate(lang, "msg.ca_created")), http.StatusSeeOther)
 }
 
-func (a *app) handleChangeCAPassphrase(w http.ResponseWriter, r *http.Request) {
+func handleChangeCAPassphrase(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
 	currentPassphrase := strings.TrimSpace(r.FormValue("current_passphrase"))
 	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
 	if cfg.CAPassphraseSet && currentPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.changeCAPassphrase(currentPassphrase, newPassphrase); err != nil {
-		if errors.Is(err, errCAConfigNotFound) {
-			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+	if err := a.ChangeCAPassphrase(currentPassphrase, newPassphrase); err != nil {
+		if errors.Is(err, ca.ErrCAConfigNotFound) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 			return
 		}
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_updated")), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.Translate(lang, "msg.ca_passphrase_updated")), http.StatusSeeOther)
 }
 
-func (a *app) handleRenewCA(w http.ResponseWriter, r *http.Request) {
+func handleRenewCA(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
 	caPassphrase := strings.TrimSpace(r.FormValue("ca_passphrase"))
 	if cfg.CAPassphraseSet && caPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.renewCA(caPassphrase); err != nil {
-		if errors.Is(err, errCAConfigNotFound) {
-			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+	if err := a.RenewCA(caPassphrase); err != nil {
+		if errors.Is(err, ca.ErrCAConfigNotFound) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 			return
 		}
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.ca_renewed")), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.Translate(lang, "msg.ca_renewed")), http.StatusSeeOther)
 }
 
-func (a *app) handleCreateIntermediate(w http.ResponseWriter, r *http.Request) {
+func handleCreateIntermediate(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
-	if a.hasIntermediate() {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.intermediate_already_exists")), http.StatusSeeOther)
+	if a.HasIntermediate() {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.intermediate_already_exists")), http.StatusSeeOther)
 		return
 	}
 
@@ -150,97 +152,97 @@ func (a *app) handleCreateIntermediate(w http.ResponseWriter, r *http.Request) {
 	}
 	caPassphrase := strings.TrimSpace(r.FormValue("ca_passphrase"))
 	if cfg.CAPassphraseSet && caPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
 		return
 	}
 	passphrase := strings.TrimSpace(r.FormValue("intermediate_passphrase"))
 
-	if err := a.createIntermediateCA(cn, org, country, caPassphrase, passphrase); err != nil {
+	if err := a.CreateIntermediateCA(cn, org, country, caPassphrase, passphrase); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.intermediate_created")), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.Translate(lang, "msg.intermediate_created")), http.StatusSeeOther)
 }
 
-func (a *app) handleRenewIntermediate(w http.ResponseWriter, r *http.Request) {
+func handleRenewIntermediate(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
-	if !a.hasIntermediate() {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_intermediate_first")), http.StatusSeeOther)
+	if !a.HasIntermediate() {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_intermediate_first")), http.StatusSeeOther)
 		return
 	}
 	caPassphrase := strings.TrimSpace(r.FormValue("ca_passphrase"))
 	if cfg.CAPassphraseSet && caPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.renewIntermediateCA(caPassphrase); err != nil {
-		if errors.Is(err, errCAConfigNotFound) {
-			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+	if err := a.RenewIntermediateCA(caPassphrase); err != nil {
+		if errors.Is(err, ca.ErrCAConfigNotFound) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 			return
 		}
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.intermediate_renewed")), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.Translate(lang, "msg.intermediate_renewed")), http.StatusSeeOther)
 }
 
-func (a *app) handleChangeIntermediatePassphrase(w http.ResponseWriter, r *http.Request) {
+func handleChangeIntermediatePassphrase(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, has, err := a.loadConfig()
+	cfg, has, err := a.LoadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lang := a.currentLanguage(cfg, has)
+	lang := a.CurrentLanguage(cfg, has)
 	if !has {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 		return
 	}
-	if !a.hasIntermediate() {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_intermediate_first")), http.StatusSeeOther)
+	if !a.HasIntermediate() {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_intermediate_first")), http.StatusSeeOther)
 		return
 	}
 	currentPassphrase := strings.TrimSpace(r.FormValue("current_passphrase"))
 	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
 	if cfg.IntermediatePassphraseSet && currentPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.changeIntermediatePassphrase(currentPassphrase, newPassphrase); err != nil {
-		if errors.Is(err, errCAConfigNotFound) {
-			http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
+	if err := a.ChangeIntermediatePassphrase(currentPassphrase, newPassphrase); err != nil {
+		if errors.Is(err, ca.ErrCAConfigNotFound) {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.create_ca_first")), http.StatusSeeOther)
 			return
 		}
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(lang, "msg.intermediate_passphrase_updated")), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.Translate(lang, "msg.intermediate_passphrase_updated")), http.StatusSeeOther)
 }
 
-func (a *app) handleImportCA(w http.ResponseWriter, r *http.Request) {
+func handleImportCA(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if err := r.ParseMultipartForm(maxImportArchive); err != nil {
+	if err := r.ParseMultipartForm(ca.MaxImportArchive); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape("invalid form upload"), http.StatusSeeOther)
 		return
 	}
@@ -253,9 +255,9 @@ func (a *app) handleImportCA(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	importPassphrase := strings.TrimSpace(r.FormValue("import_passphrase"))
-	if err := a.importCAArchive(file, importPassphrase); err != nil {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.translate(a.defaultLang, "msg.ca_import_failed")+": "+err.Error()), http.StatusSeeOther)
+	if err := a.ImportCAArchive(file, importPassphrase); err != nil {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(a.DefaultLang, "msg.ca_import_failed")+": "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.translate(a.defaultLang, "msg.ca_imported")), http.StatusSeeOther)
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(a.Translate(a.DefaultLang, "msg.ca_imported")), http.StatusSeeOther)
 }

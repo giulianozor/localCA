@@ -1,4 +1,4 @@
-package main
+package ca
 
 import (
 	"archive/tar"
@@ -51,15 +51,15 @@ func pbkdf2SHA256(passphrase, salt []byte, iter, keyLen int) []byte {
 	return dk[:keyLen]
 }
 
-// encryptCAArchive encrypts a tar.gz archive with a passphrase using
+// EncryptCAArchive encrypts a tar.gz archive with a passphrase using
 // AES-256-GCM with a PBKDF2-derived key. The output is tagged with a magic
 // prefix so imports can detect encrypted archives.
-func encryptCAArchive(plain []byte, passphrase string) ([]byte, error) {
-	salt := make([]byte, caEncSaltLen)
+func EncryptCAArchive(plain []byte, passphrase string) ([]byte, error) {
+	salt := make([]byte, CAEncSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, err
 	}
-	key := pbkdf2SHA256([]byte(passphrase), salt, caEncKeyIter, caEncKeyLen)
+	key := pbkdf2SHA256([]byte(passphrase), salt, CAEncKeyIter, CAEncKeyLen)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -74,38 +74,38 @@ func encryptCAArchive(plain []byte, passphrase string) ([]byte, error) {
 	}
 	sealed := gcm.Seal(nil, nonce, plain, nil)
 
-	out := make([]byte, 0, len(caArchiveMagic)+1+caEncSaltLen+len(nonce)+len(sealed))
-	out = append(out, caArchiveMagic...)
-	out = append(out, archiveCryptAESGCM)
+	out := make([]byte, 0, len(CAArchiveMagic)+1+CAEncSaltLen+len(nonce)+len(sealed))
+	out = append(out, CAArchiveMagic...)
+	out = append(out, ArchiveCryptAESGCM)
 	out = append(out, salt...)
 	out = append(out, nonce...)
 	out = append(out, sealed...)
 	return out, nil
 }
 
-// decryptCAArchive reverses encryptCAArchive. It returns (plain, true, nil)
+// DecryptCAArchive reverses EncryptCAArchive. It returns (plain, true, nil)
 // when the input was encrypted, (data, false, err) when it was not an
 // encrypted archive (so callers can treat it as a plain tar.gz), and an error
 // when decryption of an encrypted archive fails (e.g. wrong passphrase).
-func decryptCAArchive(data []byte, passphrase string) ([]byte, bool, error) {
-	if !bytes.HasPrefix(data, []byte(caArchiveMagic)) {
+func DecryptCAArchive(data []byte, passphrase string) ([]byte, bool, error) {
+	if !bytes.HasPrefix(data, []byte(CAArchiveMagic)) {
 		return data, false, nil
 	}
-	rest := data[len(caArchiveMagic):]
-	if len(rest) < 1+caEncSaltLen+caEncNonceLen+16 {
+	rest := data[len(CAArchiveMagic):]
+	if len(rest) < 1+CAEncSaltLen+CAEncNonceLen+16 {
 		return nil, false, errors.New("invalid encrypted CA archive")
 	}
 	mode := rest[0]
-	if mode != archiveCryptAESGCM {
+	if mode != ArchiveCryptAESGCM {
 		return nil, false, errors.New("unsupported CA archive encryption")
 	}
 	rest = rest[1:]
-	salt := rest[:caEncSaltLen]
-	rest = rest[caEncSaltLen:]
-	nonce := rest[:caEncNonceLen]
-	ciphertext := rest[caEncNonceLen:]
+	salt := rest[:CAEncSaltLen]
+	rest = rest[CAEncSaltLen:]
+	nonce := rest[:CAEncNonceLen]
+	ciphertext := rest[CAEncNonceLen:]
 
-	key := pbkdf2SHA256([]byte(passphrase), salt, caEncKeyIter, caEncKeyLen)
+	key := pbkdf2SHA256([]byte(passphrase), salt, CAEncKeyIter, CAEncKeyLen)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, false, err
@@ -121,7 +121,7 @@ func decryptCAArchive(data []byte, passphrase string) ([]byte, bool, error) {
 	return plain, true, nil
 }
 
-func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, exportPassphrase string) error {
+func WriteCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, exportPassphrase string) error {
 	certPEM, err := os.ReadFile(filepath.Join(certDir, "cert.pem"))
 	if err != nil {
 		return err
@@ -157,8 +157,8 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 		"ca-cert.pem":   caCertPEM,
 	}
 	if exportPassphrase != "" {
-		if key, parseErr := parseUnencryptedPrivateKeyPEM(keyPEM); parseErr == nil {
-			encryptedKeyPEM, encodeErr := encodePrivateKeyPEM(key, exportPassphrase)
+		if key, parseErr := ParseUnencryptedPrivateKeyPEM(keyPEM); parseErr == nil {
+			encryptedKeyPEM, encodeErr := EncodePrivateKeyPEM(key, exportPassphrase)
 			if encodeErr != nil {
 				return encodeErr
 			}
@@ -217,14 +217,14 @@ func writeCertificateArchive(w http.ResponseWriter, certDir, safeID, dataDir, ex
 	return nil
 }
 
-// writeCertificateP12 exports a certificate as a PKCS#12 (.p12) file so it
+// WriteCertificateP12 exports a certificate as a PKCS#12 (.p12) file so it
 // can be imported directly into browsers and OS keychains for mutual TLS.
-func writeCertificateP12(w http.ResponseWriter, certDir, safeID, dataDir, exportPassphrase string) error {
+func WriteCertificateP12(w http.ResponseWriter, certDir, safeID, dataDir, exportPassphrase string) error {
 	keyPEM, err := os.ReadFile(filepath.Join(certDir, "key.pem"))
 	if err != nil {
 		return err
 	}
-	privateKey, err := parseUnencryptedPrivateKeyPEM(keyPEM)
+	privateKey, err := ParseUnencryptedPrivateKeyPEM(keyPEM)
 	if err != nil {
 		return errors.New("certificate private key is encrypted: remove or disable the key passphrase before exporting a .p12")
 	}

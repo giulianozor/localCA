@@ -48,23 +48,35 @@ The provided data directory contains:
 
 ## Project structure
 
-The application is a single `main` package organized into small files grouped by responsibility:
+The application is split into two packages:
+
+- **`main`** — the web application layer: entry point, CLI parsing, HTTP routing, and HTTP handlers.
+- **`internal/ca`** — the self-contained Certificate Authority core: domain types, X.509 generation, key management, persistence, CRL, archive/export, and template rendering/embedded UI.
+
+### `main` package
 
 | File | Responsibility |
 |------|----------------|
 | `main.go` | Entry point, CLI flag parsing, HTTP routing |
-| `app.go` | Core types (`app`, `config`, `certMetadata`, template contexts), constants, sentinel errors |
+| `handlers.go` | Generic HTTP handlers: index, language, download |
+| `handlers_ca.go` | HTTP handlers for CA / intermediate lifecycle |
+| `handlers_cert.go` | HTTP handlers for issued certificate lifecycle & CRL |
+
+### `internal/ca` package
+
+| File | Responsibility |
+|------|----------------|
+| `app.go` | Core types (`App`, `Config`, `CertMetadata`, template contexts), constants, sentinel errors |
 | `config.go` | Configuration & metadata persistence, translation loading, certificate listing |
 | `ca.go` | Root/intermediate CA creation and renewal (X.509) |
 | `crypto.go` | Issued certificate (leaf) creation and renewal (X.509 + CSR) |
 | `keys.go` | RSA key parsing, PEM encoding, passphrase management |
 | `crl.go` | Certificate Revocation List generation |
 | `parse.go` | Input validation, SAN parsing, certificate filtering, directory resolution |
-| `handlers.go` | Generic HTTP handlers: index, language, download |
-| `handlers_ca.go` | HTTP handlers for CA / intermediate lifecycle |
-| `handlers_cert.go` | HTTP handlers for issued certificate lifecycle & CRL |
-| `render.go` | Template rendering, static asset serving, embedded UI |
+| `render.go` | Template rendering, static asset serving, embedded UI + translations |
 | `archive.go` | Whole-CA backup/restore (tar.gz, encrypted or plain) |
 | `export.go` | Per-certificate export (tar.gz and PKCS#12) and archive encryption |
 
-The UI (`ui/`) and translations (`i18n/`) are embedded into the binary via `//go:embed`.
+Tests are co-located with their package: core/unit tests live in `internal/ca/`, and handler tests live in the `main` package.
+
+The UI (`internal/ca/ui/`) and translations (`internal/ca/i18n/`) are embedded into the binary via `//go:embed`.

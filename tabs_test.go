@@ -7,66 +7,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/giulianozor/localCA/internal/ca"
 )
 
-func TestCertTableArgsFiltersByType(t *testing.T) {
-	a := &app{dataDir: t.TempDir(), defaultLang: "en"}
-	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
-		t.Fatalf("createCA() error = %v", err)
-	}
-	mustCreate := func(cn, typ string) {
-		if err := a.createServerCert(cn, nil, 1, "", "", false, typ); err != nil {
-			t.Fatalf("createServerCert(%s) error = %v", typ, err)
-		}
-	}
-	mustCreate("srv.local", "server")
-	mustCreate("alice", "client")
-	mustCreate("device-1", "dot1x")
-	mustCreate("signer", "codeSigning")
-
-	certs, err := a.listCerts()
-	if err != nil {
-		t.Fatalf("listCerts() error = %v", err)
-	}
-	root := pageData{
-		Certificates: certs,
-		T:            a.translations["en"],
-	}
-
-	for _, tc := range []struct {
-		typ  string
-		want int
-	}{
-		{"server", 1},
-		{"client", 1},
-		{"dot1x", 1},
-		{"codeSigning", 1},
-	} {
-		ctx := certTableArgs(root, tc.typ, "title")
-		if len(ctx.Certificates) != tc.want {
-			t.Fatalf("certTableArgs(%s) had %d certs, want %d", tc.typ, len(ctx.Certificates), tc.want)
-		}
-		if ctx.CertType != tc.typ {
-			t.Fatalf("certTableArgs CertType = %q, want %q", ctx.CertType, tc.typ)
-		}
-	}
-}
-
 func TestHandleCertTableFiltersByType(t *testing.T) {
-	a := &app{dataDir: t.TempDir(), defaultLang: "en"}
-	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
-		t.Fatalf("createCA() error = %v", err)
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
 	}
-	if err := a.createServerCert("srv.local", nil, 1, "", "", false, "server"); err != nil {
+	if err := a.CreateServerCert("srv.local", nil, 1, "", "", false, "server"); err != nil {
 		t.Fatalf("server cert error = %v", err)
 	}
-	if err := a.createServerCert("alice", nil, 1, "", "", false, "client"); err != nil {
+	if err := a.CreateServerCert("alice", nil, 1, "", "", false, "client"); err != nil {
 		t.Fatalf("client cert error = %v", err)
 	}
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/certs/table?type=client", nil)
-	a.handleCertTable(rr, req)
+	handleCertTable(a, rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("handleCertTable status = %d, want 200", rr.Code)
 	}
@@ -81,29 +40,29 @@ func TestHandleCertTableFiltersByType(t *testing.T) {
 	// Unknown type is rejected.
 	rr2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodGet, "/certs/table?type=bogus", nil)
-	a.handleCertTable(rr2, req2)
+	handleCertTable(a, rr2, req2)
 	if rr2.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for unknown type, got %d", rr2.Code)
 	}
 }
 
 func TestIndexRendersTabsAndPerTypeForms(t *testing.T) {
-	a := &app{dataDir: t.TempDir(), defaultLang: "en"}
-	tr, err := loadTranslations()
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	tr, err := ca.LoadTranslations()
 	if err != nil {
-		t.Fatalf("loadTranslations() error = %v", err)
+		t.Fatalf("LoadTranslations() error = %v", err)
 	}
-	a.translations = tr
-	if err := a.createCA("Test Root", "localCA", "IT", ""); err != nil {
-		t.Fatalf("createCA() error = %v", err)
+	a.Translations = tr
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
 	}
-	if err := a.createServerCert("myserver.example.com", []string{"myserver.example.com"}, 1, "", "", false, "server"); err != nil {
+	if err := a.CreateServerCert("myserver.example.com", []string{"myserver.example.com"}, 1, "", "", false, "server"); err != nil {
 		t.Fatalf("server cert error = %v", err)
 	}
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	a.handleIndex(rr, req)
+	handleIndex(a, rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("handleIndex status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}
@@ -137,18 +96,18 @@ func TestIndexRendersTabsAndPerTypeForms(t *testing.T) {
 }
 
 func TestIndexRendersNoTabsBeforeCA(t *testing.T) {
-	a := &app{dataDir: t.TempDir(), defaultLang: "en"}
-	tr, err := loadTranslations()
+	a := &ca.App{DataDir: t.TempDir(), DefaultLang: "en"}
+	tr, err := ca.LoadTranslations()
 	if err != nil {
-		t.Fatalf("loadTranslations() error = %v", err)
+		t.Fatalf("LoadTranslations() error = %v", err)
 	}
-	a.translations = tr
-	if err := os.MkdirAll(filepath.Join(a.dataDir, "certs"), 0o750); err != nil {
+	a.Translations = tr
+	if err := os.MkdirAll(filepath.Join(a.DataDir, "certs"), 0o750); err != nil {
 		t.Fatalf("mkdir certs: %v", err)
 	}
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	a.handleIndex(rr, req)
+	handleIndex(a, rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("handleIndex status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}

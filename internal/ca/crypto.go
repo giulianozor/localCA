@@ -1,4 +1,4 @@
-package main
+package ca
 
 import (
 	"crypto/rand"
@@ -15,20 +15,20 @@ import (
 	"time"
 )
 
-func (a *app) createServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string, useIntermediate bool, certType string) error {
-	signerCertPEM, err := os.ReadFile(filepath.Join(a.dataDir, "ca-cert.pem"))
+func (a *App) CreateServerCert(commonName string, sans []string, years int, keyPassphrase, signerPassphrase string, useIntermediate bool, certType string) error {
+	signerCertPEM, err := os.ReadFile(filepath.Join(a.DataDir, "ca-cert.pem"))
 	if err != nil {
 		return errors.New("CA certificate not found")
 	}
 	signerName := "CA"
-	signerKeyPath := filepath.Join(a.dataDir, "ca-key.pem")
+	signerKeyPath := filepath.Join(a.DataDir, "ca-key.pem")
 	if useIntermediate {
-		signerCertPEM, err = os.ReadFile(filepath.Join(a.dataDir, "intermediate-cert.pem"))
+		signerCertPEM, err = os.ReadFile(filepath.Join(a.DataDir, "intermediate-cert.pem"))
 		if err != nil {
 			return errors.New("intermediate certificate not found")
 		}
 		signerName = "intermediate"
-		signerKeyPath = filepath.Join(a.dataDir, "intermediate-key.pem")
+		signerKeyPath = filepath.Join(a.DataDir, "intermediate-key.pem")
 	}
 	signerBlock, _ := pem.Decode(signerCertPEM)
 	if signerBlock == nil {
@@ -43,7 +43,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 	if err != nil {
 		return fmt.Errorf("%s key not found", signerName)
 	}
-	signerKey, err := parsePrivateKeyPEM(
+	signerKey, err := ParsePrivateKeyPEM(
 		signerKeyPEM,
 		signerPassphrase,
 		fmt.Sprintf("%s passphrase required", signerName),
@@ -59,7 +59,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 	}
 
 	now := time.Now()
-	dnsNames, ipAddresses := splitSANs(sans)
+	dnsNames, ipAddresses := SplitSANs(sans)
 	// server (TLS) certs authenticate Web/API servers; client (mTLS) and
 	// 802.1X (EAP-TLS) certs authenticate identity (devices/users) to a network;
 	// codeSigning certs sign software.
@@ -81,7 +81,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		Subject: pkix.Name{
 			CommonName: commonName,
 		},
-		NotBefore:   now.Add(certNotBeforeOffset),
+		NotBefore:   now.Add(CertNotBeforeOffset),
 		NotAfter:    now.AddDate(years, 0, 0),
 		ExtKeyUsage: extKeyUsage,
 		KeyUsage:    keyUsage,
@@ -104,19 +104,19 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		return err
 	}
 
-	id := certID()
-	certDir := filepath.Join(a.dataDir, "certs", id)
+	id := CertID()
+	certDir := filepath.Join(a.DataDir, "certs", id)
 	if err := os.MkdirAll(certDir, 0o750); err != nil {
 		return err
 	}
 
-	if err := writePEM(filepath.Join(certDir, "csr.pem"), "CERTIFICATE REQUEST", csrDER, 0o640); err != nil {
+	if err := WritePEM(filepath.Join(certDir, "csr.pem"), "CERTIFICATE REQUEST", csrDER, 0o640); err != nil {
 		return err
 	}
-	if err := writePEM(filepath.Join(certDir, "cert.pem"), "CERTIFICATE", certDER, 0o640); err != nil {
+	if err := WritePEM(filepath.Join(certDir, "cert.pem"), "CERTIFICATE", certDER, 0o640); err != nil {
 		return err
 	}
-	keyPEM, err := encodePrivateKeyPEM(key, keyPassphrase)
+	keyPEM, err := EncodePrivateKeyPEM(key, keyPassphrase)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		return err
 	}
 
-	meta := certMetadata{
+	meta := CertMetadata{
 		ID:            id,
 		CommonName:    commonName,
 		SANs:          sans,
@@ -133,5 +133,5 @@ func (a *app) createServerCert(commonName string, sans []string, years int, keyP
 		ValidityYears: years,
 		CreatedAt:     now,
 	}
-	return a.saveCertMetadata(certDir, meta)
+	return a.SaveCertMetadata(certDir, meta)
 }
