@@ -125,6 +125,8 @@
   "msg.signer_passphrase_required": "発行者鍵パスフレーズが必要です",
   "msg.cert_created": "証明書を作成しました",
   "msg.cert_passphrase_updated": "証明書 %s のパスフレーズを更新しました",
+  "msg.cert_passphrase_required": "証明書パスフレーズが必要です",
+  "msg.cert_passphrase_invalid": "証明書パスフレーズが無効です",
   "msg.cert_revoked": "証明書 %s を失効しました",
   "msg.cert_already_revoked": "証明書 %s は既に失効しています",
   "msg.cert_renewed": "証明書 %s を更新しました",

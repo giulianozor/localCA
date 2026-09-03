@@ -125,6 +125,8 @@
   "msg.signer_passphrase_required": "Passphrase chiave emittente richiesta",
   "msg.cert_created": "Certificato creato con successo",
   "msg.cert_passphrase_updated": "Passphrase del certificato %s aggiornata con successo",
+  "msg.cert_passphrase_required": "Passphrase del certificato richiesta",
+  "msg.cert_passphrase_invalid": "Passphrase del certificato non valida",
   "msg.cert_revoked": "Certificato %s revocato con successo",
   "msg.cert_already_revoked": "Il certificato %s è già revocato",
   "msg.cert_renewed": "Certificato %s rinnovato con successo",

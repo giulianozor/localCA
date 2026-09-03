@@ -137,7 +137,14 @@ func handleChangeCertPassphrase(a *ca.App, w http.ResponseWriter, r *http.Reques
 	id := strings.TrimSpace(r.FormValue("id"))
 	currentPassphrase := strings.TrimSpace(r.FormValue("current_passphrase"))
 	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
-	if err := a.ChangeCertificatePassphrase(id, currentPassphrase, newPassphrase); err != nil {
+	err = a.ChangeCertificatePassphrase(
+		id,
+		currentPassphrase,
+		newPassphrase,
+		a.Translate(lang, "msg.cert_passphrase_required"),
+		a.Translate(lang, "msg.cert_passphrase_invalid"),
+	)
+	if err != nil {
 		if errors.Is(err, ca.ErrCertificateIDInvalid) {
 			http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.invalid_cert_id")), http.StatusSeeOther)
 			return
@@ -215,11 +222,19 @@ func handleRenewCert(a *ca.App, w http.ResponseWriter, r *http.Request) {
 	}
 	keyPassphrase := strings.TrimSpace(r.FormValue("key_passphrase"))
 	signerPassphrase := strings.TrimSpace(r.FormValue("signer_passphrase"))
-	if cfg.SignerPassphraseRequired(a.HasIntermediate()) && signerPassphrase == "" {
-		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.signer_passphrase_required")), http.StatusSeeOther)
+	// Re-sign under the same signer that originally issued the certificate
+	// (legacy metadata without a signer falls back to the current default).
+	useIntermediate := meta.SignerName(a.HasIntermediate()) == "intermediate"
+	if useIntermediate {
+		if cfg.IntermediatePassphraseSet && signerPassphrase == "" {
+			http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.intermediate_passphrase_required")), http.StatusSeeOther)
+			return
+		}
+	} else if cfg.CAPassphraseSet && signerPassphrase == "" {
+		http.Redirect(w, r, "/?err="+url.QueryEscape(a.Translate(lang, "msg.ca_passphrase_required")), http.StatusSeeOther)
 		return
 	}
-	if err := a.CreateServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, a.HasIntermediate(), meta.CertType()); err != nil {
+	if err := a.CreateServerCert(meta.CommonName, meta.SANs, meta.ValidityYears, keyPassphrase, signerPassphrase, useIntermediate, meta.CertType()); err != nil {
 		http.Redirect(w, r, "/?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}

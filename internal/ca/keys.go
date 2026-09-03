@@ -160,7 +160,7 @@ func (a *App) ChangeIntermediatePassphrase(currentPassphrase, newPassphrase stri
 	return a.SaveConfig(cfg)
 }
 
-func (a *App) ChangeCertificatePassphrase(id, currentPassphrase, newPassphrase string) error {
+func (a *App) ChangeCertificatePassphrase(id, currentPassphrase, newPassphrase, requiredMsg, invalidMsg string) error {
 	certDir, _, err := a.ResolveCertificateDir(id)
 	if err != nil {
 		return ErrCertificateIDInvalid
@@ -169,8 +169,8 @@ func (a *App) ChangeCertificatePassphrase(id, currentPassphrase, newPassphrase s
 		filepath.Join(certDir, "key.pem"),
 		currentPassphrase,
 		newPassphrase,
-		"certificate passphrase required",
-		"invalid certificate passphrase",
+		requiredMsg,
+		invalidMsg,
 	)
 }
 

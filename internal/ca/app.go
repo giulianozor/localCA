@@ -65,9 +65,27 @@ type CertMetadata struct {
 	SANs          []string   `json:"sans"`
 	Type          string     `json:"type,omitempty"`   // server, client, dot1x, codeSigning
 	Client        bool       `json:"client,omitempty"` // legacy field, kept for older metadata files
+	Signer        string     `json:"signer,omitempty"` // ca or intermediate, the signer that issued this cert
 	ValidityYears int        `json:"validity_years"`
 	CreatedAt     time.Time  `json:"created_at"`
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
+}
+
+// SignerName returns the signer that issued the certificate, defaulting to a
+// sensible choice for legacy/older metadata files that predate the Signer
+// field.
+func (c CertMetadata) SignerName(hasIntermediate bool) string {
+	if c.Signer == "ca" {
+		return "ca"
+	}
+	if c.Signer == "intermediate" {
+		return "intermediate"
+	}
+	// Legacy metadata has no signer recorded: preserve the original behavior.
+	if hasIntermediate {
+		return "intermediate"
+	}
+	return "ca"
 }
 
 // CertType returns the normalized certificate type, mapping legacy metadata

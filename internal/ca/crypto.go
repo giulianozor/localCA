@@ -139,5 +139,10 @@ func (a *App) CreateServerCert(commonName string, sans []string, years int, keyP
 		ValidityYears: years,
 		CreatedAt:     now,
 	}
+	if useIntermediate {
+		meta.Signer = "intermediate"
+	} else {
+		meta.Signer = "ca"
+	}
 	return a.SaveCertMetadata(certDir, meta)
 }

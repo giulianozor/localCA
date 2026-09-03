@@ -163,6 +163,109 @@ func TestRevokeAndRenewCertificate(t *testing.T) {
 	}
 }
 
+func TestRenewCertificateKeepsOriginalSigner(t *testing.T) {
+	a, certID := createTestCertificate(t)
+	// Create an intermediate AFTER the certificate: the cert is root-signed.
+	// Renewing it must keep the root signer and not silently switch to the
+	// intermediate (the current default signer).
+	if err := a.CreateIntermediateCA("Test Intermediate", "localCA", "IT", "", ""); err != nil {
+		t.Fatalf("CreateIntermediateCA() error = %v", err)
+	}
+
+	certDir := filepath.Join(a.DataDir, "certs", certID)
+	meta, err := a.LoadCertMetadata(certDir)
+	if err != nil {
+		t.Fatalf("LoadCertMetadata() error = %v", err)
+	}
+	if meta.Signer != "ca" {
+		t.Fatalf("original cert signer = %q, want ca", meta.Signer)
+	}
+
+	renewForm := url.Values{}
+	renewForm.Set("id", certID)
+	renewReq := httptest.NewRequest(http.MethodPost, "/certs/renew", strings.NewReader(renewForm.Encode()))
+	renewReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	renewRR := httptest.NewRecorder()
+	handleRenewCert(a, renewRR, renewReq)
+	if renewRR.Code != http.StatusSeeOther {
+		t.Fatalf("handleRenewCert() status = %d, want %d", renewRR.Code, http.StatusSeeOther)
+	}
+
+	certs, err := a.ListCerts()
+	if err != nil {
+		t.Fatalf("ListCerts() error = %v", err)
+	}
+	if len(certs) != 2 {
+		t.Fatalf("ListCerts() len = %d, want 2 after renewal", len(certs))
+	}
+	found := false
+	for _, c := range certs {
+		if c.ID == certID {
+			continue // the revoked original
+		}
+		found = true
+		if c.Signer != "ca" {
+			t.Fatalf("renewed cert signer = %q, want ca (kept original root signer)", c.Signer)
+		}
+	}
+	if !found {
+		t.Fatal("renewed certificate not found")
+	}
+}
+
+func TestHandleChangeCertPassphraseLocalizedRequiredErrors(t *testing.T) {
+	translations, err := ca.LoadTranslations()
+	if err != nil {
+		t.Fatalf("LoadTranslations() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {
+		t.Fatalf("mkdir certs: %v", err)
+	}
+	a := &ca.App{DataDir: tempDir, DefaultLang: "en", Translations: translations}
+	if err := a.CreateCA("Test Root", "localCA", "IT", ""); err != nil {
+		t.Fatalf("CreateCA() error = %v", err)
+	}
+	// Create a cert whose private key is passphrase-protected.
+	if err := a.CreateServerCert("secure.local", []string{"secure.local"}, 1, "orig-pass", "", false, "server"); err != nil {
+		t.Fatalf("CreateServerCert() error = %v", err)
+	}
+	certs, err := a.ListCerts()
+	if err != nil || len(certs) != 1 {
+		t.Fatalf("expected one cert, got %d (err=%v)", len(certs), err)
+	}
+	certID := certs[0].ID
+
+	passForm := url.Values{}
+	passForm.Set("id", certID)
+	passForm.Set("current_passphrase", "")
+	passForm.Set("new_passphrase", "new-pass")
+	newReq := func() *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/certs/passphrase", strings.NewReader(passForm.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return r
+	}
+
+	// Without a Translations map the localized key falls back to the key name.
+	rr := httptest.NewRecorder()
+	a.Translations = nil
+	handleChangeCertPassphrase(a, rr, newReq())
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("handleChangeCertPassphrase() status = %d, want %d", rr.Code, http.StatusSeeOther)
+	}
+	if !strings.Contains(rr.Header().Get("Location"), "msg.cert_passphrase_required") {
+		t.Fatalf("expected fallback key msg.cert_passphrase_required, got %s", rr.Header().Get("Location"))
+	}
+
+	rr = httptest.NewRecorder()
+	a.Translations = translations
+	handleChangeCertPassphrase(a, rr, newReq())
+	loc := rr.Header().Get("Location")
+	if !strings.Contains(loc, url.QueryEscape("Certificate passphrase required")) {
+		t.Fatalf("expected localized 'Certificate passphrase required', got %s", loc)
+	}
+}
+
 func TestHandleDownloadArchiveRejectsExportPassphraseForEncryptedKey(t *testing.T) {
 	tempDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(tempDir, "certs"), 0o750); err != nil {

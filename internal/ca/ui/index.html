@@ -342,7 +342,7 @@
       <form method="post" action="/certs/renew">
         <input type="hidden" name="id" class="js-renew-cert-id">
         <label>{{index .T "cert.create.key_passphrase_label"}}<input name="key_passphrase" type="password" placeholder="{{index .T "cert.create.key_passphrase_placeholder"}}"></label>
-        {{if .SignerPassphraseRequired}}
+        {{if or .Config.CAPassphraseSet .Config.IntermediatePassphraseSet}}
           <label>{{index .T "cert.create.signer_passphrase_label"}}<input name="signer_passphrase" type="password"></label>
         {{end}}
         <div class="form-actions">
